@@ -1,12 +1,13 @@
+import { useMemo, useState } from 'react'
 import { ColourJson } from '../components/ColourJson'
 import { useQueuedPod } from '../hooks/useSyncStatus'
 import type { QueuedPod } from '../lib/db'
 import { photoPath, signaturePath } from '../lib/pod'
 
-/** Confirmation (§7): green banner with tick disc, the stamped photo, then
- *  the POD record in the dark navy JSON panel. Watches the local queue, so
- *  the record visibly flips from "queued offline" to "synced" the moment the
- *  sync worker gets it through. */
+/** Confirmation: green banner, the stamped photo, then a human-readable
+ *  delivery receipt. The raw record JSON lives behind a collapsed
+ *  "technical record" toggle — demo material, not driver UI. Watches the
+ *  local queue so everything flips live from queued to synced. */
 export function ResultScreen({
   pod: initialPod,
   previewUrl,
@@ -17,46 +18,33 @@ export function ResultScreen({
   onReset: () => void
 }) {
   const pod = useQueuedPod(initialPod.podId) ?? initialPod
+  const [showTech, setShowTech] = useState(false)
   const failed = pod.status === 'failed'
   const synced = pod.synced === 1
   const label = pod.photos.find((p) => p.type === 'label')
+  const where = pod.photos.find((p) => p.type === 'where_left')
+  const signatureUrl = useMemo(
+    () => (pod.signature ? URL.createObjectURL(pod.signature) : null),
+    [pod.signature],
+  )
 
   const title = synced
     ? failed
-      ? 'Failed delivery logged & synced'
-      : 'Captured & synced'
+      ? 'Failed delivery logged'
+      : 'Delivery complete'
     : failed
-      ? 'Failed delivery logged & queued'
-      : 'Captured & queued offline'
+      ? 'Failed delivery saved to device'
+      : 'Delivery saved to device'
   const sub = synced
-    ? `Uploaded — server trust stamp ${fmtTime(pod.syncedAt)}`
+    ? `Synced to dispatch at ${fmtTime(pod.syncedAt)}`
     : 'Will upload automatically when signal returns'
 
-  // Mirrors the reference record shape; storage paths appear once they exist
-  const display = {
-    pod_id: pod.podId,
-    parcel_ref: pod.parcelRef,
-    tracking: pod.trackingScanned,
-    status: pod.status,
-    ...(failed ? { failure_reason: pod.failureReason } : {}),
-    received_by: pod.receivedBy ?? (failed ? '—' : 'Signed for'),
-    captured_at: pod.capturedAt,
-    synced_at: pod.syncedAt,
-    location: pod.location
-      ? { lat: pod.location.lat, lng: pod.location.lng, accuracy_m: pod.location.accuracyM }
-      : null,
-    gps_source: pod.location?.source ?? 'device',
-    gps_simulated: pod.location?.source === 'simulated',
-    signature: pod.signature ? (synced ? signaturePath(pod.podId) : 'queued') : null,
-    photos: pod.photos.map((p) => ({
-      type: p.type,
-      stored: synced ? photoPath(pod.podId, p.type) : 'pending-upload',
-      orig_kb: p.origKb,
-      compressed_kb: p.compressedKb,
-    })),
-    driver_id: 'drv_demo',
-    device_queued: !synced,
-  }
+  const gpsNote =
+    pod.location?.source === 'photo_exif'
+      ? ' · from photo'
+      : pod.location?.source === 'simulated'
+        ? ' · simulated'
+        : ''
 
   return (
     <div className="px-[18px] pb-[22px] pt-4">
@@ -72,38 +60,137 @@ export function ResultScreen({
         </div>
       </div>
 
-      <div className="mb-[13px]">
-        <img
-          src={previewUrl}
-          alt="Proof of delivery photo"
-          className="block w-full rounded-[13px] border border-line"
-        />
-        {label && (
-          <div className="mt-1.5 text-center text-[11.5px] text-muted">
-            Compressed {label.origKb} KB → {label.compressedKb} KB before upload
+      <img
+        src={previewUrl}
+        alt="Proof of delivery photo"
+        className="mb-3.5 block w-full rounded-[13px] border border-line"
+      />
+
+      {/* Delivery receipt — what a driver/customer actually needs to see */}
+      <p className="section-label mb-[9px]">Delivery summary</p>
+      <div className="overflow-hidden rounded-[13px] border border-line bg-white">
+        <Row k="Parcel">
+          <span className="font-serif text-[14px]">{pod.parcelRef}</span>
+        </Row>
+        <Row k="Outcome">
+          <span className={failed ? 'font-bold text-fail' : 'font-bold text-ok'}>
+            {failed ? 'Failed' : 'Delivered'}
+          </span>
+          {failed && pod.failureReason ? (
+            <span className="text-muted"> — {pod.failureReason}</span>
+          ) : null}
+        </Row>
+        <Row k="Received by">{pod.receivedBy ?? '—'}</Row>
+        <Row k="Time (device)">{fmtDateTime(pod.capturedAt)}</Row>
+        <Row k="Synced (server)">
+          {synced ? (
+            fmtDateTime(pod.syncedAt)
+          ) : (
+            <span className="text-gold">Queued on device</span>
+          )}
+        </Row>
+        <Row k={`Location${gpsNote}`}>
+          {pod.location ? (
+            <a
+              href={`https://www.openstreetmap.org/?mlat=${pod.location.lat}&mlon=${pod.location.lng}#map=17/${pod.location.lat}/${pod.location.lng}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-navy-500 underline"
+            >
+              {pod.location.lat.toFixed(5)}, {pod.location.lng.toFixed(5)}
+              {pod.location.accuracyM != null ? ` ±${pod.location.accuracyM}m` : ''}
+            </a>
+          ) : (
+            '—'
+          )}
+        </Row>
+        <Row k="Photos">
+          {label ? `Label ${label.compressedKb} KB` : '—'}
+          {where ? ` · Where left ${where.compressedKb} KB` : ''}
+        </Row>
+        {signatureUrl && (
+          <div className="flex items-center justify-between gap-4 px-3.5 py-2.5">
+            <span className="text-[10px] font-bold uppercase tracking-[0.6px] text-muted">
+              Signature
+            </span>
+            <img src={signatureUrl} alt="signature" className="h-10 rounded-[6px] border border-line px-1" />
           </div>
         )}
       </div>
 
-      <ColourJson
-        header={synced ? 'POD record · synced to Supabase' : 'POD record · saved to device'}
-        value={display}
-      />
+      {/* The raw record, for demos and debugging — collapsed by default */}
+      <button
+        type="button"
+        onClick={() => setShowTech((s) => !s)}
+        className="mx-auto mt-3.5 block text-[11.5px] text-muted underline"
+      >
+        {showTech ? 'Hide technical record' : 'View technical record'}
+      </button>
+      {showTech && (
+        <div className="mt-2.5">
+          <ColourJson
+            header={synced ? 'POD record · synced to Supabase' : 'POD record · saved to device'}
+            value={buildTechRecord(pod, synced)}
+          />
+        </div>
+      )}
 
       <button
         type="button"
         onClick={onReset}
-        className="mx-auto mt-3.5 block text-[12.5px] text-navy-500 underline"
+        className="mt-4 w-full rounded-[13px] bg-navy p-[15px] font-serif text-base tracking-[0.3px] text-white transition active:translate-y-px"
       >
-        ↺ Back to today's stops
+        Back to today's stops
       </button>
     </div>
   )
 }
 
+function Row({ k, children }: { k: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-line px-3.5 py-2.5 last:border-b-0">
+      <span className="flex-none text-[10px] font-bold uppercase tracking-[0.6px] text-muted">{k}</span>
+      <span className="min-w-0 text-right text-[13px] font-medium tabular-nums">{children}</span>
+    </div>
+  )
+}
+
+function buildTechRecord(pod: QueuedPod, synced: boolean) {
+  return {
+    pod_id: pod.podId,
+    parcel_ref: pod.parcelRef,
+    tracking: pod.trackingScanned,
+    status: pod.status,
+    ...(pod.status === 'failed' ? { failure_reason: pod.failureReason } : {}),
+    received_by: pod.receivedBy,
+    captured_at: pod.capturedAt,
+    synced_at: pod.syncedAt,
+    location: pod.location
+      ? { lat: pod.location.lat, lng: pod.location.lng, accuracy_m: pod.location.accuracyM }
+      : null,
+    gps_source: pod.location?.source ?? 'device',
+    signature: pod.signature ? (synced ? signaturePath(pod.podId) : 'queued') : null,
+    photos: pod.photos.map((p) => ({
+      type: p.type,
+      stored: synced ? photoPath(pod.podId, p.type) : 'pending-upload',
+      orig_kb: p.origKb,
+      compressed_kb: p.compressedKb,
+    })),
+    driver_id: 'drv_demo',
+    device_queued: !synced,
+  }
+}
+
 function fmtTime(iso: string | null): string {
   if (!iso) return ''
-  return new Date(iso).toLocaleTimeString('en-GB', {
+  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
