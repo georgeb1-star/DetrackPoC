@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ePOD — demo parcel labels</title>
+<!-- Barcode + QR renderers (CDN). The page is a demo asset: open it on a
+     second screen (or print it) and scan with the driver app. -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<style>
+  :root { --navy:#0e1c38; --gold:#c9a227; --line:#d8dbe2; --muted:#6b7589; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 16px 60px;
+    background: #eceef2;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif;
+    color: #10192e;
+    display: flex; flex-direction: column; align-items: center; gap: 18px;
+  }
+  .intro { max-width: 640px; text-align: center; }
+  .intro h1 { font-family: Georgia, serif; font-size: 20px; margin: 0 0 6px; color: var(--navy); }
+  .intro p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .sheet { display: grid; grid-template-columns: repeat(auto-fit, 384px); gap: 18px; justify-content: center; }
+
+  .label {
+    width: 384px; background: #fff; border: 1px solid var(--line);
+    border-radius: 10px; overflow: hidden;
+    box-shadow: 0 8px 24px -14px rgba(14,28,56,.35);
+    break-inside: avoid;
+  }
+  .label .head {
+    background: var(--navy); color: #fff; padding: 9px 14px;
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .label .head .brand { font-family: Georgia, serif; font-size: 15px; letter-spacing: .4px; }
+  .label .head .brand span { color: #e3c766; }
+  .label .head .svc { font-size: 10px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: #e3c766; }
+  .label .gold { height: 3px; background: linear-gradient(90deg, var(--gold), transparent); }
+
+  .label .to { padding: 12px 14px 10px; border-bottom: 1px dashed var(--line); }
+  .label .to .k { font-size: 9.5px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); }
+  .label .to .who { font-size: 16px; font-weight: 700; margin-top: 2px; }
+  .label .to .addr { font-size: 12.5px; color: #38415a; margin-top: 2px; line-height: 1.5; }
+  .label .to .pc { font-size: 15px; font-weight: 800; letter-spacing: 1px; margin-top: 3px; }
+
+  .label .meta {
+    display: flex; justify-content: space-between; padding: 8px 14px;
+    border-bottom: 1px dashed var(--line); font-size: 10.5px;
+    font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted);
+  }
+  .label .meta b { color: var(--navy); }
+
+  .label .codes { display: flex; align-items: center; gap: 10px; padding: 10px 14px 6px; }
+  .label .codes svg { flex: 1; max-width: 246px; }
+  .label .codes .qr { flex: none; padding: 2px; border: 1px solid var(--line); border-radius: 6px; }
+  .label .tn {
+    text-align: center; font-family: "Courier New", monospace; font-size: 15px;
+    font-weight: 700; letter-spacing: 3px; padding: 0 0 10px;
+  }
+  .label .ret { padding: 7px 14px 9px; border-top: 1px solid var(--line); font-size: 10px; color: var(--muted); }
+
+  .stop1 { outline: 3px solid var(--gold); outline-offset: 3px; }
+
+  @media print {
+    body { background: #fff; padding: 8mm; }
+    .intro { display: none; }
+    .sheet { gap: 8mm; }
+    .label { box-shadow: none; }
+    .stop1 { outline: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="intro">
+    <h1>Demo parcel labels</h1>
+    <p>
+      Open the driver app on your phone → <b>Scan label</b> → point the camera at a
+      barcode or QR below (scanning off a screen works fine; Ctrl+P to print real ones).
+      Stop&nbsp;1 is highlighted.
+    </p>
+  </div>
+  <div class="sheet" id="sheet"></div>
+
+<script>
+  // Mirrors supabase/seed.sql — keep in sync if the seed changes
+  const PARCELS = [
+    ['CP-849213-GB', 'Meridian Logistics', 'Unit 4, Hailey Road Industrial Estate, Erith', 'DA18 4AA', 'Domestic'],
+    ['CP-100002-GB', 'Patricia Holloway', '14 Larkspur Close, Maidstone', 'ME14 9QT', 'Domestic'],
+    ['CP-100003-GB', 'Dev & Sons Hardware', '88 Roman Road, Bethnal Green, London', 'E2 0QJ', 'Domestic'],
+    ['CP-200004-GB', 'Brightwell Imports Ltd', '22 Queen Street, Edinburgh', 'EH2 1JX', 'International'],
+    ['CP-200005-GB', 'Atlantique Wines (UK)', '8 Harbour View, Cardiff Bay, Cardiff', 'CF10 5BZ', 'International'],
+    ['CP-300006-GB', 'Acme Home Goods — J. Mercer', '3 Foundry Lane, Holbeck, Leeds', 'LS11 9XE', 'Fulfilment'],
+    ['CP-300007-GB', 'Tillys Toy Shop', '27 St Giles Street, Norwich', 'NR2 1JN', 'Fulfilment'],
+    ['CP-400008-GB', 'NN4 Regional Sort Hub', 'Unit 9, Saddlers Way, Northampton', 'NN4 7HD', 'Sortation'],
+  ];
+
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const sheet = document.getElementById('sheet');
+
+  PARCELS.forEach(([tn, who, addr, pc, area], i) => {
+    const el = document.createElement('article');
+    el.className = 'label' + (i === 0 ? ' stop1' : '');
+    el.innerHTML = `
+      <div class="head"><div class="brand">CITI<span>POST</span></div><div class="svc">Tracked 24 · ePOD</div></div>
+      <div class="gold"></div>
+      <div class="to">
+        <div class="k">Deliver to</div>
+        <div class="who">${esc(who)}</div>
+        <div class="addr">${esc(addr)}</div>
+        <div class="pc">${esc(pc)}</div>
+      </div>
+      <div class="meta"><span>Stop <b>${i + 1}</b> of ${PARCELS.length}</span><span>${esc(area)}</span><span>1 of 1 · 2.4kg</span></div>
+      <div class="codes">
+        <svg class="bc"></svg>
+        <div class="qr"></div>
+      </div>
+      <div class="tn">${esc(tn)}</div>
+      <div class="ret">Return if undeliverable: Citipost Hub, Unit 9 Saddlers Way, Northampton NN4 7HD</div>`;
+    sheet.appendChild(el);
+
+    JsBarcode(el.querySelector('.bc'), tn, {
+      format: 'CODE128', width: 2, height: 64, displayValue: false, margin: 0,
+    });
+    new QRCode(el.querySelector('.qr'), { text: tn, width: 84, height: 84, correctLevel: QRCode.CorrectLevel.M });
+  });
+</script>
+</body>
+</html>
