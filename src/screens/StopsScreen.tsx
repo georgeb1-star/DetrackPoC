@@ -136,9 +136,10 @@ export function StopsScreen({
         )}
       </div>
 
-      {/* Pinned footer: the dispatch handover lives in the app now, not in
-          demo chrome around it */}
-      <div className="mt-auto border-t border-line bg-white px-[18px] py-3 pb-[max(12px,env(safe-area-inset-bottom))] text-center">
+      {/* Pinned footer: i2i brand mark + the dispatch handover — the white
+          bar is the one surface the full-colour logo sits on naturally */}
+      <div className="mt-auto flex items-center justify-between border-t border-line bg-white px-[18px] py-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+        <img src="/i2i-logo.png" alt="Insight 2 Innovate · Citipost" className="h-7 w-auto" />
         <a href="#/dispatch" className="text-xs font-semibold text-muted underline">
           Dispatcher view
         </a>

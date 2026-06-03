@@ -70,6 +70,13 @@ export function ResultScreen({
       {/* Delivery receipt — what a driver/customer actually needs to see */}
       <p className="section-label mb-[9px]">Delivery summary</p>
       <div className="overflow-hidden rounded-[13px] border border-line bg-white">
+        {/* Branded receipt header — a POD slip carries the company mark */}
+        <div className="flex items-center justify-between border-b border-line px-3.5 py-2.5">
+          <img src="/i2i-logo.png" alt="Insight 2 Innovate · Citipost" className="h-6 w-auto" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.6px] text-muted">
+            Proof of delivery
+          </span>
+        </div>
         <Row k="Parcel">
           <span className="font-serif text-[14px]">{pod.parcelRef}</span>
         </Row>
