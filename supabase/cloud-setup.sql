@@ -105,3 +105,10 @@ insert into parcels (tracking_number, recipient_name, address_line, postcode, de
 
   ('CP-400008-GB', 'NN4 Regional Sort Hub',     'Unit 9, Saddlers Way, Northampton',            'NN4 7HD',
    st_setsrid(st_makepoint(-0.89320, 52.21510), 4326)::geography, 'Sortation');
+
+-- Hosted-project gotcha: if RLS got enabled on these tables (dashboard
+-- prompts encourage it), the anon key reads 0 rows and writes are rejected.
+-- The PoC posture is RLS OFF (no auth, demo only) - enforce it explicitly:
+alter table parcels     disable row level security;
+alter table pod_records disable row level security;
+alter table pod_photos  disable row level security;
