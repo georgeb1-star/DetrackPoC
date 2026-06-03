@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Add-Type -AssemblyName System.IO.Compression.FileSystem; $zip = [System.IO.Compression.ZipFile]::OpenRead\\(\"C:\\\\Users\\\\GBunton\\\\Downloads\\\\files.zip\"\\); $zip.Entries | Select-Object FullName, Length | Format-Table -AutoSize; $zip.Dispose\\(\\))",
+      "PowerShell(npm *)",
+      "PowerShell(try { supabase --version } catch { \"supabase CLI not on PATH\" }; try { \\(Get-Command git\\).Source; git --version } catch { \"git not found\" })",
+      "PowerShell(& \"C:\\\\Users\\\\GBunton\\\\Documents\\\\Detrack PoC\\\\node_modules\\\\@supabase\\\\cli-windows-x64\\\\bin\\\\supabase.exe\" --version)",
+      "PowerShell(& \"C:\\\\Users\\\\GBunton\\\\Documents\\\\Detrack PoC\\\\node_modules\\\\@supabase\\\\cli-windows-x64\\\\bin\\\\supabase.exe\" init --with-vscode-settings=false --with-intellij-settings=false)",
+      "PowerShell(git *)"
+    ]
+  }
+}

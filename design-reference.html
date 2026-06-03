@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ePOD Capture — Driver App Prototype</title>
+<style>
+  :root{
+    --navy:#0e1c38;
+    --navy-2:#16294d;
+    --navy-3:#1f3a66;
+    --gold:#c9a227;
+    --gold-soft:#e3c766;
+    --paper:#f6f4ee;
+    --ink:#10192e;
+    --muted:#6b7589;
+    --line:rgba(14,28,56,.12);
+    --green:#2f8f5b;
+    --red:#c0492f;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;min-height:100vh;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, #19305a 0%, transparent 60%),
+      linear-gradient(160deg,#0a1428 0%, #0e1c38 55%, #0a1428 100%);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,sans-serif;
+    color:var(--ink);
+    display:flex;flex-direction:column;align-items:center;
+    padding:28px 16px 56px;gap:22px;
+  }
+  .lead{max-width:430px;text-align:center;color:#d9def0}
+  .lead h1{font-family:Georgia,"Times New Roman",serif;font-weight:600;font-size:21px;margin:0 0 6px;color:#fff;letter-spacing:.2px}
+  .lead p{margin:0;font-size:13.5px;line-height:1.6;color:#aeb8d4}
+
+  /* phone frame */
+  .phone{
+    width:390px;max-width:100%;
+    background:var(--paper);
+    border-radius:30px;
+    box-shadow:0 30px 60px -20px rgba(0,0,0,.6), 0 0 0 9px #060b18, 0 0 0 11px #223256;
+    overflow:hidden;
+    position:relative;
+  }
+  .topbar{
+    background:var(--navy);color:#fff;padding:14px 18px 16px;position:relative;
+  }
+  .topbar::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,var(--gold),transparent)}
+  .topbar .eyebrow{font-size:10.5px;letter-spacing:2px;text-transform:uppercase;color:var(--gold-soft);font-weight:600}
+  .topbar .ref{font-family:Georgia,serif;font-size:18px;margin-top:3px;display:flex;align-items:center;gap:8px}
+  .topbar .barcode{font-family:"Courier New",monospace;font-size:12px;color:#9fb0d6;margin-top:5px;letter-spacing:1px}
+
+  .stop{padding:14px 18px;border-bottom:1px solid var(--line);background:#fff}
+  .stop .who{font-weight:600;font-size:15px}
+  .stop .addr{font-size:13px;color:var(--muted);margin-top:2px;line-height:1.45}
+
+  .body{padding:16px 18px 20px}
+  .section-label{font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 9px}
+
+  /* capture zone */
+  .capture{
+    border:2px dashed var(--navy-3);border-radius:16px;
+    background:#fff;
+    aspect-ratio:4/3;width:100%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:10px;cursor:pointer;color:var(--navy);text-align:center;padding:14px;
+    transition:.18s;position:relative;overflow:hidden;
+  }
+  .capture:active{transform:scale(.99);background:#f0eee6}
+  .capture .cam-ic{width:46px;height:46px;border-radius:50%;background:var(--navy);display:flex;align-items:center;justify-content:center}
+  .capture .cam-ic svg{width:24px;height:24px;stroke:var(--gold-soft);fill:none;stroke-width:1.7}
+  .capture .ct{font-weight:600;font-size:14px}
+  .capture .cs{font-size:12px;color:var(--muted)}
+  .capture img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .capture.has-photo{border-style:solid;border-color:var(--navy)}
+  .retake{
+    position:absolute;top:10px;right:10px;z-index:3;
+    background:rgba(14,28,56,.82);color:#fff;border:none;border-radius:20px;
+    font-size:11.5px;padding:7px 12px;font-weight:600;cursor:pointer;backdrop-filter:blur(4px)
+  }
+  input[type=file]{display:none}
+
+  .meta{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .chip{background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 11px}
+  .chip .k{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .chip .v{font-size:13px;font-weight:600;margin-top:3px;font-variant-numeric:tabular-nums}
+  .chip .v.pending{color:var(--muted);font-weight:500}
+  .chip.sim .v{color:var(--gold)}
+
+  .field{margin-top:14px}
+  .field label{display:block;font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:6px}
+  .field input,.field select{
+    width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:11px;
+    font-size:14px;font-family:inherit;background:#fff;color:var(--ink)
+  }
+  .field input:focus,.field select:focus{outline:none;border-color:var(--navy-3);box-shadow:0 0 0 3px rgba(31,58,102,.12)}
+
+  .seg{display:flex;gap:8px;margin-top:6px}
+  .seg button{
+    flex:1;padding:11px;border-radius:11px;border:1px solid var(--line);background:#fff;
+    font-family:inherit;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;transition:.15s
+  }
+  .seg button.on-ok{background:var(--green);border-color:var(--green);color:#fff}
+  .seg button.on-fail{background:var(--red);border-color:var(--red);color:#fff}
+
+  .complete{
+    width:100%;margin-top:18px;padding:15px;border:none;border-radius:13px;cursor:pointer;
+    background:var(--navy);color:#fff;font-family:Georgia,serif;font-size:16px;letter-spacing:.3px;
+    position:relative;overflow:hidden;transition:.15s
+  }
+  .complete:disabled{opacity:.4;cursor:not-allowed}
+  .complete:not(:disabled):active{transform:translateY(1px)}
+  .complete .bar{position:absolute;left:0;bottom:0;height:3px;background:var(--gold);width:0;transition:.2s}
+
+  /* result */
+  .result{padding:0 18px 22px;display:none}
+  .result.show{display:block;animation:fade .4s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .sync{
+    display:flex;align-items:center;gap:11px;background:#eef6f0;border:1px solid #cbe6d5;
+    border-radius:13px;padding:13px 14px;margin-bottom:14px
+  }
+  .sync .dot{width:34px;height:34px;border-radius:50%;background:var(--green);flex:none;display:flex;align-items:center;justify-content:center}
+  .sync .dot svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:2.4}
+  .sync .st{font-weight:700;font-size:13.5px;color:#1d6840}
+  .sync .ss{font-size:12px;color:#3f7a59;margin-top:1px}
+
+  .json-wrap{background:var(--navy);border-radius:13px;overflow:hidden}
+  .json-wrap .jh{padding:10px 14px;font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--gold-soft);font-weight:700;border-bottom:1px solid rgba(255,255,255,.08)}
+  pre{margin:0;padding:13px 14px;font-family:"SF Mono",ui-monospace,"Courier New",monospace;font-size:11.5px;line-height:1.6;color:#cdd7f0;overflow-x:auto;white-space:pre}
+  .key{color:var(--gold-soft)}.str{color:#86d6a8}.num{color:#e3a36b}.bool{color:#7fb0f0}
+
+  .stamped{margin-bottom:13px}
+  .stamped img{width:100%;border-radius:13px;border:1px solid var(--line);display:block}
+  .cap-note{font-size:11.5px;color:var(--muted);margin-top:6px;text-align:center}
+
+  .reset{display:block;margin:14px auto 0;background:none;border:none;color:#9fb0d6;font-size:12.5px;cursor:pointer;text-decoration:underline}
+  .legend{max-width:430px;font-size:12px;color:#9fb0d6;line-height:1.6}
+  .legend b{color:#d9def0;font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="lead">
+  <h1>Electronic Proof of Delivery</h1>
+  <p>A driver's capture screen. Photograph the label, and the timestamp and location are burned into the image and packaged into a delivery record.</p>
+</div>
+
+<div class="phone">
+  <div class="topbar">
+    <div class="eyebrow">Stop 7 of 14 · Domestic</div>
+    <div class="ref">CP-849213-GB</div>
+    <div class="barcode">‖▌║▌‖║▌║‖ 3S CPGB 849213 002</div>
+  </div>
+
+  <div class="stop">
+    <div class="who">Meridian Logistics</div>
+    <div class="addr">Unit 4, Hailey Road Industrial Estate<br>Erith, DA18 4AA</div>
+  </div>
+
+  <div class="body" id="capture-form">
+    <p class="section-label">Capture label</p>
+    <label class="capture" id="capZone" for="fileInput">
+      <div class="cam-ic">
+        <svg viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L19 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="13" cy="12.5" r="3.5"/></svg>
+      </div>
+      <div class="ct">Tap to photograph the label</div>
+      <div class="cs">Camera opens on mobile · file picker on desktop</div>
+    </label>
+    <input type="file" id="fileInput" accept="image/*" capture="environment">
+
+    <div class="meta">
+      <div class="chip"><div class="k">Timestamp</div><div class="v pending" id="tsVal">—</div></div>
+      <div class="chip" id="gpsChip"><div class="k">GPS location</div><div class="v pending" id="gpsVal">acquiring…</div></div>
+    </div>
+
+    <div class="field">
+      <label>Received by</label>
+      <input type="text" id="recipient" placeholder="Name, or “left in porch”">
+    </div>
+
+    <div class="field">
+      <label>Outcome</label>
+      <div class="seg">
+        <button type="button" id="btnOk" class="on-ok">Delivered</button>
+        <button type="button" id="btnFail">Failed</button>
+      </div>
+    </div>
+
+    <button class="complete" id="completeBtn" disabled>
+      Complete delivery
+      <span class="bar" id="bar"></span>
+    </button>
+  </div>
+
+  <div class="result" id="result">
+    <div class="sync">
+      <div class="dot"><svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg></div>
+      <div>
+        <div class="st" id="syncTitle">Captured & queued offline</div>
+        <div class="ss" id="syncSub">Will upload automatically when signal returns</div>
+      </div>
+    </div>
+    <div class="stamped" id="stampedWrap">
+      <img id="stampedImg" alt="Stamped proof of delivery photo">
+      <div class="cap-note" id="capNote"></div>
+    </div>
+    <div class="json-wrap">
+      <div class="jh">POD record · saved to device</div>
+      <pre id="jsonOut"></pre>
+    </div>
+    <button class="reset" id="resetBtn">↺ Capture another delivery</button>
+  </div>
+</div>
+
+<div class="legend">
+  <b>What's real in this demo:</b> the timestamp, the GPS read (with graceful fallback if your browser blocks location), the overlay burned onto the photo via canvas, and JPEG compression. The "queued offline → upload" step and the barcode are stubbed — those are the next pieces to wire to Supabase storage and a barcode scanner.
+</div>
+
+<script>
+  const state = { photoBlob:null, stampedDataUrl:null, ts:null, coords:null, gpsSimulated:false, outcome:'delivered', origSize:0, newSize:0 };
+
+  const fileInput = document.getElementById('fileInput');
+  const capZone   = document.getElementById('capZone');
+  const tsVal     = document.getElementById('tsVal');
+  const gpsVal    = document.getElementById('gpsVal');
+  const gpsChip   = document.getElementById('gpsChip');
+  const completeBtn = document.getElementById('completeBtn');
+
+  // 1. Acquire location up front (with fallback to Erith if blocked/denied)
+  function acquireLocation(){
+    if(!navigator.geolocation){ fallbackLocation(); return; }
+    navigator.geolocation.getCurrentPosition(
+      p => {
+        state.coords = { lat:+p.coords.latitude.toFixed(5), lng:+p.coords.longitude.toFixed(5), accuracy:Math.round(p.coords.accuracy) };
+        state.gpsSimulated = false;
+        gpsVal.textContent = state.coords.lat + ', ' + state.coords.lng;
+        gpsVal.classList.remove('pending');
+      },
+      () => fallbackLocation(),
+      { enableHighAccuracy:true, timeout:8000, maximumAge:0 }
+    );
+  }
+  function fallbackLocation(){
+    state.coords = { lat:51.48400, lng:0.17700, accuracy:35 };
+    state.gpsSimulated = true;
+    gpsVal.textContent = state.coords.lat + ', ' + state.coords.lng;
+    gpsVal.classList.remove('pending');
+    gpsChip.classList.add('sim');
+    gpsChip.querySelector('.k').textContent = 'GPS location (simulated)';
+  }
+  acquireLocation();
+
+  // 2. Outcome toggle
+  const btnOk = document.getElementById('btnOk'), btnFail = document.getElementById('btnFail');
+  btnOk.onclick = () => { state.outcome='delivered'; btnOk.classList.add('on-ok'); btnFail.classList.remove('on-fail'); };
+  btnFail.onclick = () => { state.outcome='failed'; btnFail.classList.add('on-fail'); btnOk.classList.remove('on-ok'); };
+
+  // 3. Photo capture → stamp → compress
+  fileInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if(!file) return;
+    state.origSize = file.size;
+    state.ts = new Date();
+    const img = new Image();
+    img.onload = () => { stampAndCompress(img); URL.revokeObjectURL(img.src); };
+    img.src = URL.createObjectURL(file);
+  });
+
+  function stampAndCompress(img){
+    // cap longest edge at 1280px for a sensible upload size
+    const MAX = 1280;
+    let { width:w, height:h } = img;
+    if(Math.max(w,h) > MAX){ const s = MAX/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+
+    // burn the evidence strip onto the bottom of the photo
+    const stripH = Math.max(58, Math.round(h*0.13));
+    const grad = ctx.createLinearGradient(0, h-stripH, 0, h);
+    grad.addColorStop(0,'rgba(8,16,34,0)'); grad.addColorStop(.35,'rgba(8,16,34,.78)'); grad.addColorStop(1,'rgba(8,16,34,.92)');
+    ctx.fillStyle = grad; ctx.fillRect(0, h-stripH, w, stripH);
+
+    const pad = Math.round(w*0.035);
+    const big = Math.max(13, Math.round(w*0.032));
+    const sml = Math.max(11, Math.round(w*0.024));
+    const stamp = fmt(state.ts);
+    const loc = state.coords.lat + ', ' + state.coords.lng + '  ±' + state.coords.accuracy + 'm' + (state.gpsSimulated ? '  (sim)' : '');
+
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#e3c766';
+    ctx.font = '600 ' + big + 'px Georgia, serif';
+    ctx.fillText('CP-849213-GB', pad, h - stripH + big + pad*0.4);
+    ctx.fillStyle = '#dbe2f5';
+    ctx.font = '400 ' + sml + 'px -apple-system, sans-serif';
+    ctx.fillText(stamp, pad, h - stripH + big + sml + pad*0.9);
+    ctx.fillText(loc, pad, h - stripH + big + sml*2 + pad*1.2);
+
+    state.stampedDataUrl = c.toDataURL('image/jpeg', 0.72);
+    state.newSize = Math.round((state.stampedDataUrl.length - 'data:image/jpeg;base64,'.length) * 3/4);
+
+    // preview in the capture zone
+    capZone.classList.add('has-photo');
+    capZone.innerHTML = '<img src="'+state.stampedDataUrl+'" alt="captured label">' +
+                        '<button class="retake" type="button" id="retakeBtn">Retake</button>';
+    document.getElementById('retakeBtn').onclick = (ev)=>{ ev.preventDefault(); fileInput.value=''; location.reload(); };
+
+    tsVal.textContent = state.ts.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    tsVal.classList.remove('pending');
+    completeBtn.disabled = false;
+  }
+
+  function fmt(d){
+    return d.toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }
+
+  // 4. Complete → build the POD record
+  completeBtn.onclick = () => {
+    document.getElementById('bar').style.width='100%';
+    setTimeout(buildRecord, 260);
+  };
+
+  function buildRecord(){
+    const rec = {
+      pod_id: 'pod_' + Math.random().toString(36).slice(2,10),
+      parcel_ref: 'CP-849213-GB',
+      tracking: '3S-CPGB-849213-002',
+      status: state.outcome,
+      received_by: (document.getElementById('recipient').value || (state.outcome==='delivered'?'Signed for':'—')),
+      captured_at: state.ts.toISOString(),
+      synced_at: null,
+      location: state.coords,
+      gps_simulated: state.gpsSimulated,
+      photo: { stored:'pending-upload', orig_kb:Math.round(state.origSize/1024), compressed_kb:Math.round(state.newSize/1024) },
+      driver_id: 'drv_emma_h',
+      device_queued: true
+    };
+
+    document.getElementById('jsonOut').innerHTML = colourJson(rec);
+    document.getElementById('stampedImg').src = state.stampedDataUrl;
+    document.getElementById('capNote').textContent =
+      'Compressed ' + rec.photo.orig_kb + ' KB → ' + rec.photo.compressed_kb + ' KB before upload';
+
+    if(state.outcome==='failed'){
+      document.getElementById('syncTitle').textContent = 'Failed delivery logged & queued';
+      document.getElementById('syncSub').textContent = 'Recorded with evidence; will sync when online';
+    }
+
+    document.getElementById('capture-form').style.display='none';
+    document.getElementById('result').classList.add('show');
+  }
+
+  function colourJson(obj){
+    let j = JSON.stringify(obj, null, 2);
+    j = j.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    j = j.replace(/"([^"]+)":/g,'<span class="key">"$1"</span>:');
+    j = j.replace(/: "([^"]*)"/g,': <span class="str">"$1"</span>');
+    j = j.replace(/: (\d+\.?\d*)/g,': <span class="num">$1</span>');
+    j = j.replace(/: (true|false|null)/g,': <span class="bool">$1</span>');
+    return j;
+  }
+
+  document.getElementById('resetBtn').onclick = () => location.reload();
+</script>
+</body>
+</html>

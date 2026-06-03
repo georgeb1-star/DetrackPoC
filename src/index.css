@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    margin: 0;
+    min-height: 100vh;
+    /* Driver app background (§7): radial navy glow top-right over a linear
+       navy gradient — the phone frame sits on this like a device on a desk. */
+    background:
+      radial-gradient(1200px 600px at 80% -10%, #19305a 0%, transparent 60%),
+      linear-gradient(160deg, #0a1428 0%, #0e1c38 55%, #0a1428 100%);
+    background-attachment: fixed;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, sans-serif;
+    color: theme('colors.ink');
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  /* Section labels — ~11px, uppercase, letter-spaced, muted, bold (§7) */
+  .section-label {
+    @apply text-[11px] uppercase tracking-[1.4px] text-muted font-bold;
+  }
+
+  /* Gold-to-transparent gradient underline along the bottom of the top bar */
+  .gold-underline::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: linear-gradient(90deg, theme('colors.gold.DEFAULT'), transparent);
+  }
+}

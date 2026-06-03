@@ -1,0 +1,23 @@
+# deps / build
+node_modules/
+dist/
+dev-dist/
+*.tsbuildinfo
+
+# local claude settings
+.claude/settings.local.json
+
+# env — .env.example is the committed template
+.env
+.env.local
+
+# supabase local state
+supabase/.temp/
+supabase/.branches/
+
+# editor / OS
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.log
