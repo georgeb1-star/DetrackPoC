@@ -5,6 +5,18 @@ export type ParcelStatus = 'pending' | 'delivered' | 'failed'
 export type PodStatus = 'delivered' | 'failed'
 export type PhotoType = 'label' | 'where_left'
 
+/** Where a POD's fix came from, most → least trustworthy */
+export type GpsSource = 'photo_exif' | 'device' | 'simulated'
+
+/** A resolved GPS fix. accuracyM is null for EXIF fixes (cameras don't
+ *  record accuracy). */
+export interface Fix {
+  lat: number
+  lng: number
+  accuracyM: number | null
+  source: GpsSource
+}
+
 export interface Parcel {
   id: string
   tracking_number: string
@@ -15,7 +27,14 @@ export interface Parcel {
   destination: GeoPoint | string | null
   area: Area
   status: ParcelStatus
+  /** The run this parcel belongs to (date). Pending past this = rollover. */
+  due_date: string
   created_at: string
+}
+
+/** Rollover rule: still pending after its run date (derived, no nightly job). */
+export function isRollover(p: Parcel, today = new Date()): boolean {
+  return p.status === 'pending' && p.due_date < today.toISOString().slice(0, 10)
 }
 
 export interface PodRecord {
@@ -30,6 +49,7 @@ export interface PodRecord {
   location: GeoPoint | string | null
   gps_accuracy_m: number | null
   gps_simulated: boolean
+  gps_source: GpsSource
   signature_path: string | null
   driver_id: string
   created_at: string

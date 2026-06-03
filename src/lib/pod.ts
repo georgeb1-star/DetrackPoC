@@ -1,7 +1,7 @@
 import { db, type QueuedPod } from './db'
 import { EVIDENCE_BUCKET, supabase } from './supabase'
 import { emitSync } from './syncEvents'
-import type { Parcel, PhotoType, PodStatus } from './types'
+import type { Fix, Parcel, PhotoType, PodStatus } from './types'
 
 export interface CapturedPhoto {
   type: PhotoType
@@ -19,7 +19,7 @@ export interface CaptureBundle {
   receivedBy: string
   capturedAt: Date
   photos: CapturedPhoto[]
-  location: { lat: number; lng: number; accuracyM: number; simulated: boolean } | null
+  location: Fix | null
   signature: Blob | null
 }
 
@@ -100,7 +100,8 @@ export async function uploadPod(pod: QueuedPod): Promise<string | null> {
         captured_at: pod.capturedAt,
         location: pod.location ? `POINT(${pod.location.lng} ${pod.location.lat})` : null,
         gps_accuracy_m: pod.location?.accuracyM ?? null,
-        gps_simulated: pod.location?.simulated ?? false,
+        gps_simulated: pod.location?.source === 'simulated',
+        gps_source: pod.location?.source ?? 'device',
         signature_path: pod.signature ? signaturePath(pod.podId) : null,
         driver_id: 'drv_demo',
       },

@@ -13,6 +13,8 @@ export function useParcels() {
     const { data, error } = await supabase
       .from('parcels')
       .select('*')
+      // Oldest due first → rollovers lead the run, then today's stops
+      .order('due_date', { ascending: true })
       .order('tracking_number')
     if (error) {
       // Offline-friendly: keep showing stale stops if we already have data —

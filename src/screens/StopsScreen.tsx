@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { BarcodeScanner } from '../components/BarcodeScanner'
 import { TopBar } from '../components/TopBar'
 import { useSyncStatus } from '../hooks/useSyncStatus'
-import type { Parcel } from '../lib/types'
+import { isRollover, type Parcel, type PodStatus } from '../lib/types'
 
 const STATUS_STYLES: Record<Parcel['status'], string> = {
   pending: 'text-muted',
@@ -10,7 +10,9 @@ const STATUS_STYLES: Record<Parcel['status'], string> = {
   failed: 'text-fail',
 }
 
-/** Driver home (§6.1): prominent Scan label entry, then today's seeded stops. */
+/** Driver home (§6.1): scan entry, the active run (rollovers first), then a
+ *  separate Completed section. A job is "done" the moment it's captured —
+ *  even while the record is still queued offline. */
 export function StopsScreen({
   parcels,
   error,
@@ -25,6 +27,12 @@ export function StopsScreen({
   // captured stop reads as done the moment the driver completes it
   const { queuedParcels } = useSyncStatus()
 
+  const isDone = (p: Parcel) => p.status !== 'pending' || queuedParcels.has(p.id)
+  // useParcels orders by due_date first, so rollovers naturally lead the run
+  const active = parcels?.filter((p) => !isDone(p)) ?? []
+  const completed = parcels?.filter(isDone) ?? []
+  const rollovers = active.filter((p) => isRollover(p)).length
+
   const today = new Date().toLocaleDateString('en-GB', {
     weekday: 'long',
     day: '2-digit',
@@ -36,13 +44,16 @@ export function StopsScreen({
       <TopBar
         eyebrow="Citipost · Today's run"
         title="Today's stops"
-        mono={parcels ? `${parcels.length} stops · ${today}` : today}
+        mono={
+          parcels
+            ? `${active.length} to do${rollovers ? ` · ${rollovers} rollover` : ''} · ${completed.length} done · ${today}`
+            : today
+        }
       />
 
       <div className="px-[18px] pb-2 pt-4">
         {/* The scan-to-attach path is the feature that matters most (§5) —
-            it gets the prominent slot. Camera scanning lands in Checkpoint 5;
-            the type-in fallback works now. */}
+            it gets the prominent slot. */}
         <button
           type="button"
           onClick={() => setSheetOpen(true)}
@@ -64,44 +75,45 @@ export function StopsScreen({
         {!error && !parcels && (
           <div className="px-[18px] py-6 text-center text-[13px] text-muted">Loading stops…</div>
         )}
+        {parcels && active.length === 0 && (
+          <div className="px-[18px] py-6 text-center text-[13px] text-muted">
+            All stops complete — nice work.
+          </div>
+        )}
 
-        {parcels?.map((p, i) => {
-          const queuedStatus = queuedParcels.get(p.id)
-          return (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => onSelect(p)}
-            className="block w-full border-b border-line bg-white px-[18px] py-3.5 text-left transition active:bg-paper"
-          >
-            <div className="flex items-baseline justify-between gap-3">
-              <div className="text-[15px] font-semibold">{p.recipient_name}</div>
-              {queuedStatus ? (
-                <div className="text-[11px] font-bold uppercase tracking-[0.6px]">
-                  <span className={STATUS_STYLES[queuedStatus]}>{queuedStatus}</span>
-                  <span className="text-gold"> · queued</span>
-                </div>
-              ) : (
-                <div className={`text-[11px] font-bold uppercase tracking-[0.6px] ${STATUS_STYLES[p.status]}`}>
-                  {p.status === 'pending' ? `Stop ${i + 1}` : p.status}
-                </div>
-              )}
-            </div>
-            <div className="mt-0.5 text-[13px] leading-[1.45] text-muted">
-              {p.address_line}
-              {p.postcode ? `, ${p.postcode}` : ''}
-            </div>
-            <div className="mt-1.5 flex items-center justify-between">
-              <span className="font-mono text-[11px] tracking-[1px] text-navy-500">
-                {p.tracking_number}
+        {active.map((p, i) => (
+          <StopRow key={p.id} parcel={p} onSelect={onSelect}>
+            {isRollover(p) ? (
+              <span className="rounded-full border border-gold/50 bg-gold/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] text-gold">
+                Rollover · {dueLabel(p.due_date)}
               </span>
-              <span className="text-[10px] font-bold uppercase tracking-[0.6px] text-gold">
-                {p.area}
+            ) : (
+              <span className="text-[11px] font-bold uppercase tracking-[0.6px] text-muted">
+                Stop {i + 1}
               </span>
-            </div>
-          </button>
-          )
-        })}
+            )}
+          </StopRow>
+        ))}
+
+        {completed.length > 0 && (
+          <>
+            <p className="section-label mb-1 mt-5 px-[18px]">Completed</p>
+            {completed.map((p) => {
+              const queuedStatus = queuedParcels.get(p.id)
+              const status: PodStatus | Parcel['status'] = queuedStatus ?? p.status
+              return (
+                <StopRow key={p.id} parcel={p} onSelect={onSelect} dim>
+                  <span className="text-[11px] font-bold uppercase tracking-[0.6px]">
+                    <span className={STATUS_STYLES[status as Parcel['status']] ?? 'text-muted'}>
+                      {status === 'delivered' ? '✓ delivered' : status}
+                    </span>
+                    {queuedStatus && <span className="text-gold"> · queued</span>}
+                  </span>
+                </StopRow>
+              )
+            })}
+          </>
+        )}
       </div>
 
       {/* Pinned footer: the dispatch handover lives in the app now, not in
@@ -208,6 +220,44 @@ function ScanSheet({
       </div>
     </div>
   )
+}
+
+/** One stop in either section; the status slot comes in as children. */
+function StopRow({
+  parcel: p,
+  onSelect,
+  dim = false,
+  children,
+}: {
+  parcel: Parcel
+  onSelect: (parcel: Parcel) => void
+  dim?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(p)}
+      className={`block w-full border-b border-line bg-white px-[18px] py-3.5 text-left transition active:bg-paper ${dim ? 'opacity-75' : ''}`}
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="text-[15px] font-semibold">{p.recipient_name}</div>
+        {children}
+      </div>
+      <div className="mt-0.5 text-[13px] leading-[1.45] text-muted">
+        {p.address_line}
+        {p.postcode ? `, ${p.postcode}` : ''}
+      </div>
+      <div className="mt-1.5 flex items-center justify-between">
+        <span className="font-mono text-[11px] tracking-[1px] text-navy-500">{p.tracking_number}</span>
+        <span className="text-[10px] font-bold uppercase tracking-[0.6px] text-gold">{p.area}</span>
+      </div>
+    </button>
+  )
+}
+
+function dueLabel(dueDate: string): string {
+  return new Date(`${dueDate}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
 }
 
 function BarcodeGlyph() {

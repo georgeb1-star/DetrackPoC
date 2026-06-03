@@ -4,7 +4,7 @@ import { SyncBadge } from './components/SyncBadge'
 import { useParcels } from './hooks/useParcels'
 import type { QueuedPod } from './lib/db'
 import { subscribeSync } from './lib/syncEvents'
-import type { Parcel } from './lib/types'
+import { isRollover, type Parcel } from './lib/types'
 import { CaptureScreen } from './screens/CaptureScreen'
 import { ResultScreen } from './screens/ResultScreen'
 import { StopsScreen } from './screens/StopsScreen'
@@ -41,8 +41,7 @@ export default function App() {
         <CaptureScreen
           parcel={view.parcel}
           trackingScanned={view.scannedValue}
-          stopIndex={(parcels?.findIndex((p) => p.id === view.parcel.id) ?? 0) + 1}
-          stopCount={parcels?.length ?? 0}
+          eyebrow={captureEyebrow(view.parcel, parcels)}
           onBack={() => setView({ name: 'stops' })}
           onComplete={(pod, previewUrl) => setView({ name: 'done', pod, previewUrl })}
         />
@@ -57,4 +56,14 @@ export default function App() {
       )}
     </AppShell>
   )
+}
+
+/** "Rollover · Domestic" for overdue stops, "Stop 2 of 7 · Domestic" within
+ *  the active run, "Revisit · Domestic" when re-opening a completed stop. */
+function captureEyebrow(parcel: Parcel, parcels: Parcel[] | null): string {
+  if (isRollover(parcel)) return `Rollover · ${parcel.area}`
+  const active = parcels?.filter((p) => p.status === 'pending') ?? []
+  const idx = active.findIndex((p) => p.id === parcel.id)
+  if (idx === -1) return `Revisit · ${parcel.area}`
+  return `Stop ${idx + 1} of ${active.length} · ${parcel.area}`
 }

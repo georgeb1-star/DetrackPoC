@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Fix } from '../lib/stamp'
+import type { Fix } from '../lib/types'
 
 /** Demo fallback (Erith, like the reference) used when the fix is denied,
  *  times out, or geolocation is unavailable (e.g. plain-HTTP LAN access).
- *  gps_simulated keeps trusted and untrusted reads distinguishable (§5). */
-const FALLBACK: Fix = { lat: 51.484, lng: 0.177, accuracyM: 35, simulated: true }
+ *  The 'simulated' source keeps trusted and untrusted reads distinguishable (§5). */
+const FALLBACK: Fix = { lat: 51.484, lng: 0.177, accuracyM: 35, source: 'simulated' }
 
 function acquire(): Promise<Fix> {
   return new Promise((resolve) => {
@@ -18,7 +18,7 @@ function acquire(): Promise<Fix> {
           lat: +p.coords.latitude.toFixed(5),
           lng: +p.coords.longitude.toFixed(5),
           accuracyM: Math.round(p.coords.accuracy),
-          simulated: false,
+          source: 'device',
         }),
       () => resolve(FALLBACK),
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 },

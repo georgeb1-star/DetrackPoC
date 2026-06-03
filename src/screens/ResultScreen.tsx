@@ -45,7 +45,8 @@ export function ResultScreen({
     location: pod.location
       ? { lat: pod.location.lat, lng: pod.location.lng, accuracy_m: pod.location.accuracyM }
       : null,
-    gps_simulated: pod.location?.simulated ?? false,
+    gps_source: pod.location?.source ?? 'device',
+    gps_simulated: pod.location?.source === 'simulated',
     signature: pod.signature ? (synced ? signaturePath(pod.podId) : 'queued') : null,
     photos: pod.photos.map((p) => ({
       type: p.type,

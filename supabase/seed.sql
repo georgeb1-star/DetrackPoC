@@ -26,3 +26,7 @@ insert into parcels (tracking_number, recipient_name, address_line, postcode, de
 
   ('CP-400008-GB', 'NN4 Regional Sort Hub',     'Unit 9, Saddlers Way, Northampton',            'NN4 7HD',
    st_setsrid(st_makepoint(-0.89320, 52.21510), 4326)::geography, 'Sortation');
+
+-- One stop left over from yesterday's run, so the ROLLOVER state is visible
+-- on first load.
+update parcels set due_date = current_date - 1 where tracking_number = 'CP-100003-GB';

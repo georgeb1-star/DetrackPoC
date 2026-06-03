@@ -150,6 +150,11 @@ function PodCard({ pod, onPhoto }: { pod: JoinedPod; onPhoto: (url: string) => v
               {pod.parcel?.tracking_number ?? 'Unmatched parcel'}
             </h2>
             <StatusPill failed={failed} />
+            {pod.gps_source === 'photo_exif' && (
+              <span className="rounded-full border border-ok/40 bg-ok/10 px-2.5 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.6px] text-ok">
+                GPS from photo
+              </span>
+            )}
             {pod.gps_simulated && (
               <span className="rounded-full border border-gold/40 bg-gold/10 px-2.5 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.6px] text-gold">
                 GPS simulated
@@ -184,7 +189,7 @@ function PodCard({ pod, onPhoto }: { pod: JoinedPod; onPhoto: (url: string) => v
             <Meta k="Captured (device)" v={fmt(pod.captured_at)} />
             <Meta k="Synced (server)" v={fmt(pod.synced_at)} />
             <Meta
-              k={`Location ${pod.gps_simulated ? '(sim)' : ''}`}
+              k={`Location ${pod.gps_source === 'photo_exif' ? '(photo)' : pod.gps_simulated ? '(sim)' : ''}`}
               v={
                 point ? (
                   <a

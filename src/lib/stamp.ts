@@ -1,13 +1,7 @@
 /** Canvas evidence stamping (§5): cap the longest edge at 1280px, burn the
  *  parcel ref + timestamp + GPS onto a gradient strip at the bottom, export
  *  as JPEG ~0.72. Maths and styling ported from design-reference.html. */
-
-export interface Fix {
-  lat: number
-  lng: number
-  accuracyM: number
-  simulated: boolean
-}
+import type { Fix } from './types'
 
 export interface StampedPhoto {
   blob: Blob
@@ -57,9 +51,10 @@ export async function stampAndCompress(
   const pad = Math.round(w * 0.035)
   const big = Math.max(13, Math.round(w * 0.032))
   const sml = Math.max(11, Math.round(w * 0.024))
-  const loc =
-    `${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}  ±${fix.accuracyM}m` +
-    (fix.simulated ? '  (sim)' : '')
+  // Provenance marker: (photo) = EXIF from the camera, (sim) = demo fallback
+  const srcMark = fix.source === 'photo_exif' ? '  (photo)' : fix.source === 'simulated' ? '  (sim)' : ''
+  const acc = fix.accuracyM != null ? `  ±${fix.accuracyM}m` : ''
+  const loc = `${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}${acc}${srcMark}`
 
   ctx.textBaseline = 'alphabetic'
   ctx.fillStyle = '#e3c766' // gold-soft parcel ref, Georgia serif

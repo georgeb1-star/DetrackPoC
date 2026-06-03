@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { PhotoType, PodStatus } from './types'
+import type { Fix, PhotoType, PodStatus } from './types'
 
 /** A capture as it sits in the local queue (§8): photo/signature blobs and
  *  all metadata land here FIRST — nothing blocks on the network. Synced items
@@ -14,7 +14,7 @@ export interface QueuedPod {
   failureReason: string | null
   receivedBy: string | null
   capturedAt: string // ISO, device clock (evidence time)
-  location: { lat: number; lng: number; accuracyM: number; simulated: boolean } | null
+  location: Fix | null
   photos: { type: PhotoType; blob: Blob; origKb: number; compressedKb: number }[]
   signature: Blob | null
   /** 0 = queued, 1 = synced (numbers — Dexie can't index booleans) */

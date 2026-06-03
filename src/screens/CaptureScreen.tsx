@@ -1,12 +1,13 @@
+import exifr from 'exifr'
 import { useRef, useState } from 'react'
 import { SignatureBox, type SignatureHandle } from '../components/SignatureBox'
 import { TopBar } from '../components/TopBar'
 import { useGeolocation } from '../hooks/useGeolocation'
 import type { QueuedPod } from '../lib/db'
 import { queuePod, type CapturedPhoto } from '../lib/pod'
-import { stampAndCompress, type Fix, type StampedPhoto } from '../lib/stamp'
+import { stampAndCompress, type StampedPhoto } from '../lib/stamp'
 import { syncNow } from '../lib/syncWorker'
-import type { Parcel, PodStatus } from '../lib/types'
+import type { Fix, Parcel, PodStatus } from '../lib/types'
 
 const FAILURE_PRESETS = ['No access', 'Refused', 'Address not found', 'Other…'] as const
 
@@ -17,15 +18,14 @@ const FAILURE_PRESETS = ['No access', 'Refused', 'Address not found', 'Other…'
 export function CaptureScreen({
   parcel,
   trackingScanned,
-  stopIndex,
-  stopCount,
+  eyebrow,
   onComplete,
   onBack,
 }: {
   parcel: Parcel
   trackingScanned: string
-  stopIndex: number
-  stopCount: number
+  /** e.g. "Stop 2 of 7 · Domestic" or "Rollover · Domestic" */
+  eyebrow: string
   onComplete: (pod: QueuedPod, previewUrl: string) => void
   onBack: () => void
 }) {
@@ -41,18 +41,31 @@ export function CaptureScreen({
   const [error, setError] = useState<string | null>(null)
   const sigRef = useRef<SignatureHandle>(null)
   // The fix actually burned into the label photo — the record must match the image
-  const usedFixRef = useRef<Fix | null>(null)
+  const [usedFix, setUsedFix] = useState<Fix | null>(null)
   const barRef = useRef<HTMLSpanElement>(null)
 
   async function takePhoto(file: File, slot: 'label' | 'where_left') {
     try {
       const takenAt = new Date() // evidence time = device clock at the shutter (§5)
-      const gpsFix = await getFix() // awaits the in-flight acquisition if needed
+      // GPS provenance ladder: prefer the fix the camera embedded in the
+      // photo itself (EXIF), then live device GPS, then the simulated demo
+      // fix. Browsers often strip EXIF location for privacy, so the fallback
+      // path is the common one.
+      const exif = await exifr.gps(file).catch(() => undefined)
+      const gpsFix: Fix =
+        exif && Number.isFinite(exif.latitude) && Number.isFinite(exif.longitude)
+          ? {
+              lat: +exif.latitude.toFixed(5),
+              lng: +exif.longitude.toFixed(5),
+              accuracyM: null, // cameras don't record accuracy in EXIF
+              source: 'photo_exif',
+            }
+          : await getFix() // awaits the in-flight acquisition if needed
       const stamped = await stampAndCompress(file, parcel.tracking_number, takenAt, gpsFix)
       if (slot === 'label') {
         setLabelPhoto(stamped)
         setCapturedAt((prev) => prev ?? takenAt)
-        usedFixRef.current = gpsFix
+        setUsedFix(gpsFix)
       } else {
         setWherePhoto(stamped)
       }
@@ -79,7 +92,7 @@ export function CaptureScreen({
     }
 
     try {
-      const gpsFix = usedFixRef.current ?? (await getFix())
+      const gpsFix = usedFix ?? (await getFix())
       const signature = (await sigRef.current?.getBlob()) ?? null
       // Local-first (§8): this is an IndexedDB write — instant, works with
       // zero signal. The driver sees "queued" immediately.
@@ -91,7 +104,7 @@ export function CaptureScreen({
         receivedBy: receivedBy.trim(),
         capturedAt,
         photos,
-        location: { lat: gpsFix.lat, lng: gpsFix.lng, accuracyM: gpsFix.accuracyM, simulated: gpsFix.simulated },
+        location: gpsFix,
         signature,
       })
       void syncNow() // fire-and-forget — drains now if we happen to be online
@@ -106,7 +119,7 @@ export function CaptureScreen({
   return (
     <>
       <TopBar
-        eyebrow={`Stop ${stopIndex} of ${stopCount} · ${parcel.area}`}
+        eyebrow={eyebrow}
         title={parcel.tracking_number}
         mono={`‖▌║▌‖║▌║‖ ${trackingScanned.replace(/-/g, ' ')}`}
         onBack={onBack}
@@ -147,13 +160,26 @@ export function CaptureScreen({
             v={capturedAt?.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) ?? '—'}
             pending={!capturedAt}
           />
-          {/* Gold + "(simulated)" when the fix is a fallback (§7) */}
-          <Chip
-            k={fix?.simulated ? 'GPS location (simulated)' : 'GPS location'}
-            v={fix ? `${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}` : 'acquiring…'}
-            pending={!fix}
-            sim={fix?.simulated}
-          />
+          {/* Shows the fix that will go on the record: the photo's EXIF fix
+              once a photo is taken, otherwise the live device fix. Gold +
+              "(simulated)" when it's the fallback (§7). */}
+          {(() => {
+            const shown = usedFix ?? fix
+            const k =
+              shown?.source === 'photo_exif'
+                ? 'GPS location (from photo)'
+                : shown?.source === 'simulated'
+                  ? 'GPS location (simulated)'
+                  : 'GPS location'
+            return (
+              <Chip
+                k={k}
+                v={shown ? `${shown.lat.toFixed(5)}, ${shown.lng.toFixed(5)}` : 'acquiring…'}
+                pending={!shown}
+                sim={shown?.source === 'simulated'}
+              />
+            )
+          })()}
         </div>
 
         <Field label="Received by">

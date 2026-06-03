@@ -50,17 +50,22 @@ Routing:  main.tsx hash router — #/dispatch = DispatcherScreen, else driver Ap
 - **Trust boundary:** `captured_at` = device clock at the shutter;
   `synced_at` = DB column default `now()` at first insert (never sent by the
   client, never overwritten on conflict-update).
-- **GPS:** acquired on capture-screen mount; denied/timeout/insecure-context
-  → Erith fallback `51.484, 0.177 ±35m` with `gps_simulated=true`. The fix
-  burned into the photo is the fix stored on the record (`usedFixRef`).
+- **GPS provenance ladder** (`gps_source`): photo EXIF (exifr) → live device
+  fix (acquired on capture-screen mount) → Erith fallback `51.484, 0.177
+  ±35m` ('simulated'). EXIF fixes have `gps_accuracy_m = null`. The fix
+  burned into the photo is the fix stored on the record. Browsers often
+  strip EXIF GPS, so 'device' is the common case.
 - **Geography columns** come back from PostgREST as EWKB hex — parse with
   `geo.ts` (offsets verified by `scripts/test-ewkb.mjs`).
 
 ## Data model (§4 + adjustments)
 
 - `parcels` — tracking_number unique (the barcode value), recipient/address,
-  `destination geography(point,4326)`, area, status; seeded with 8 UK parcels
-  (`CP-849213-GB` = the design-reference parcel)
+  `destination geography(point,4326)`, area, status, `due_date` (the run the
+  parcel belongs to); seeded with 8 UK parcels (`CP-849213-GB` = the
+  design-reference parcel; `CP-100003-GB` is seeded due yesterday to demo
+  rollover). **Rollover is derived**: pending AND due_date < today → badge +
+  sorted first (order by due_date) — no nightly job.
 - `pod_records` — client UUID pk, parcel_id FK, tracking_scanned, status
   (delivered|failed), failure_reason (check: required when failed),
   received_by, captured_at, synced_at (default now()), location geography,
