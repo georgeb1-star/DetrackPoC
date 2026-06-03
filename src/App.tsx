@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { PhoneFrame } from './components/PhoneFrame'
+import { AppShell } from './components/AppShell'
 import { SyncBadge } from './components/SyncBadge'
 import { useParcels } from './hooks/useParcels'
 import type { QueuedPod } from './lib/db'
@@ -24,7 +24,7 @@ export default function App() {
   useEffect(() => subscribeSync(() => void reload()), [reload])
 
   return (
-    <PhoneFrame>
+    <AppShell>
       <SyncBadge />
 
       {view.name === 'stops' && (
@@ -55,6 +55,6 @@ export default function App() {
           onReset={() => setView({ name: 'stops' })}
         />
       )}
-    </PhoneFrame>
+    </AppShell>
   )
 }

@@ -11,7 +11,7 @@ export function SyncBadge() {
       type="button"
       onClick={() => void syncNow()}
       title="Tap to sync now"
-      className="absolute right-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-white/15 bg-navy-600/95 px-2.5 py-[5px] text-[10px] font-bold uppercase tracking-[0.6px] shadow-lg"
+      className="absolute right-3 top-[max(12px,env(safe-area-inset-top))] z-20 flex items-center gap-1.5 rounded-full border border-white/15 bg-navy-600/95 px-2.5 py-[5px] text-[10px] font-bold uppercase tracking-[0.6px] shadow-lg"
     >
       {!online && (
         <>

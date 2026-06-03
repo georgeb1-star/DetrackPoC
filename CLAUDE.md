@@ -76,10 +76,12 @@ Routing:  main.tsx hash router — #/dispatch = DispatcherScreen, else driver Ap
   ok `#2f8f5b`; fail `#c0492f`; hairline `line` = `rgba(14,28,56,.12)`
 - Georgia serif: app title, parcel ref, primary buttons. Mono: barcode lines,
   JSON. Section labels: 11px uppercase tracked muted bold.
-- Phone frame 390px / radius 30px / `shadow-phone` bezel on the navy
-  radial+linear desk gradient. Gold-to-transparent `gold-underline` on top
-  bars. GPS chip gold + "(simulated)" on fallback. JSON panel: keys gold,
-  strings green, numbers orange, booleans blue.
+- Responsive shell (`AppShell`): edge-to-edge on mobile (min-h-dvh,
+  safe-area-aware top bar/badge/footer), centred ~430px elevated column on
+  the navy gradient for laptop. No mockup chrome — this is the product UI.
+  Gold-to-transparent `gold-underline` on top bars. GPS chip gold +
+  "(simulated)" on fallback. JSON panel: keys gold, strings green, numbers
+  orange, booleans blue.
 
 ## Commands
 

@@ -12,7 +12,8 @@ export function TopBar({
   onBack?: () => void
 }) {
   return (
-    <div className="gold-underline relative bg-navy px-[18px] pb-4 pt-3.5 text-white">
+    // max() keeps the bar clear of notches/status bars when installed as a PWA
+    <div className="gold-underline relative bg-navy px-[18px] pb-4 pt-[max(14px,env(safe-area-inset-top))] text-white">
       {onBack && (
         <button
           type="button"

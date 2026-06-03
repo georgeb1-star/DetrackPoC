@@ -38,9 +38,10 @@ export function DispatcherScreen() {
   }, [load])
 
   return (
-    <div className="min-h-screen px-4 py-8 sm:px-8">
+    // Edge-to-edge on mobile, contained card on larger screens
+    <div className="min-h-dvh sm:px-8 sm:py-8">
       <div className="mx-auto max-w-4xl">
-        <header className="gold-underline relative rounded-t-2xl bg-navy px-6 pb-5 pt-4 text-white">
+        <header className="gold-underline relative bg-navy px-5 pb-5 pt-[max(16px,env(safe-area-inset-top))] text-white sm:rounded-t-2xl sm:px-6">
           <a href="#/" className="text-[11px] font-semibold text-[#9fb0d6]">
             ‹ Driver app
           </a>
@@ -55,7 +56,7 @@ export function DispatcherScreen() {
           </div>
         </header>
 
-        <div className="rounded-b-2xl bg-paper p-4 sm:p-5">
+        <div className="min-h-[calc(100dvh-110px)] bg-paper p-4 sm:min-h-0 sm:rounded-b-2xl sm:p-5">
           {error && (
             <div className="rounded-[11px] border border-fail/40 bg-fail/10 px-3 py-2.5 text-[13px] text-fail">
               Couldn't load PODs: {error}. Is the local Supabase stack running?

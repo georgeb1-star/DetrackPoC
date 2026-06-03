@@ -114,8 +114,11 @@ export function BarcodeScanner({ onDecode }: { onDecode: (value: string) => void
         <div className="scanline absolute left-1 right-1 h-px bg-gold-soft/80 shadow-[0_0_8px_rgba(227,199,102,.9)]" />
       </div>
 
-      <div className="absolute bottom-2 left-0 right-0 text-center text-[10.5px] uppercase tracking-[1.4px] text-white/70">
-        {status === 'starting' ? 'Starting camera…' : `Point at the barcode · ${engine === 'native' ? 'native' : 'zxing'}`}
+      <div
+        className="absolute bottom-2 left-0 right-0 text-center text-[10.5px] uppercase tracking-[1.4px] text-white/70"
+        title={engine ?? undefined}
+      >
+        {status === 'starting' ? 'Starting camera…' : 'Point the camera at the barcode'}
       </div>
     </div>
   )
