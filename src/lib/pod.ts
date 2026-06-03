@@ -25,6 +25,9 @@ export interface CaptureBundle {
 export interface CompletedPod {
   record: PodRecord
   photoPaths: { type: PhotoType; path: string; origKb: number; compressedKb: number }[]
+  /** The fix as captured — PostGIS returns geography as WKB, so the bundle's
+   *  plain lat/lng is what the confirmation JSON displays */
+  location: CaptureBundle['location']
 }
 
 /**
@@ -101,7 +104,7 @@ export async function completePodOnline(bundle: CaptureBundle): Promise<Complete
   // 4. Reflect the outcome on the stop list.
   await supabase.from('parcels').update({ status: bundle.status }).eq('id', bundle.parcel.id)
 
-  return { record: record as PodRecord, photoPaths }
+  return { record: record as PodRecord, photoPaths, location: bundle.location }
 }
 
 /** Public URL for an object in the evidence bucket (bucket is public in this PoC). */

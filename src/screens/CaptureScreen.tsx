@@ -1,20 +1,17 @@
 import { useRef, useState } from 'react'
+import { SignatureBox, type SignatureHandle } from '../components/SignatureBox'
 import { TopBar } from '../components/TopBar'
+import { useGeolocation } from '../hooks/useGeolocation'
 import { completePodOnline, type CapturedPhoto, type CompletedPod } from '../lib/pod'
+import { stampAndCompress, type Fix, type StampedPhoto } from '../lib/stamp'
 import type { Parcel, PodStatus } from '../lib/types'
 
 const FAILURE_PRESETS = ['No access', 'Refused', 'Address not found', 'Other…'] as const
 
-interface PhotoState {
-  blob: Blob
-  url: string
-  origKb: number
-  compressedKb: number
-}
-
-/** Capture screen (§6.2): the full §5 evidence bundle, one-handed. Checkpoint 3
- *  ships photo / timestamp / recipient / outcome and writes straight to
- *  Supabase; GPS, overlay+compression and signature wire in at Checkpoint 4. */
+/** Capture screen (§6.2): the full §5 evidence bundle, one-handed. Photos are
+ *  stamped + compressed on capture; GPS falls back to a simulated fix;
+ *  signature is optional. Still writes straight to Supabase — the offline
+ *  queue replaces that path in Checkpoint 6. */
 export function CaptureScreen({
   parcel,
   trackingScanned,
@@ -30,8 +27,9 @@ export function CaptureScreen({
   onComplete: (result: CompletedPod, previewUrl: string) => void
   onBack: () => void
 }) {
-  const [labelPhoto, setLabelPhoto] = useState<PhotoState | null>(null)
-  const [wherePhoto, setWherePhoto] = useState<PhotoState | null>(null)
+  const { fix, getFix } = useGeolocation()
+  const [labelPhoto, setLabelPhoto] = useState<StampedPhoto | null>(null)
+  const [wherePhoto, setWherePhoto] = useState<StampedPhoto | null>(null)
   const [capturedAt, setCapturedAt] = useState<Date | null>(null)
   const [receivedBy, setReceivedBy] = useState('')
   const [outcome, setOutcome] = useState<PodStatus>('delivered')
@@ -39,27 +37,29 @@ export function CaptureScreen({
   const [failureOther, setFailureOther] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const sigRef = useRef<SignatureHandle>(null)
+  // The fix actually burned into the label photo — the record must match the image
+  const usedFixRef = useRef<Fix | null>(null)
   const barRef = useRef<HTMLSpanElement>(null)
 
-  function takePhoto(file: File, slot: 'label' | 'where_left') {
-    const photo: PhotoState = {
-      blob: file,
-      url: URL.createObjectURL(file),
-      // Checkpoint 4 replaces these with the real stamped/compressed numbers
-      origKb: Math.round(file.size / 1024),
-      compressedKb: Math.round(file.size / 1024),
-    }
-    if (slot === 'label') {
-      setLabelPhoto(photo)
-      // Evidence time = device clock at the moment of the (label) photo (§5)
-      if (!capturedAt) setCapturedAt(new Date())
-    } else {
-      setWherePhoto(photo)
+  async function takePhoto(file: File, slot: 'label' | 'where_left') {
+    try {
+      const takenAt = new Date() // evidence time = device clock at the shutter (§5)
+      const gpsFix = await getFix() // awaits the in-flight acquisition if needed
+      const stamped = await stampAndCompress(file, parcel.tracking_number, takenAt, gpsFix)
+      if (slot === 'label') {
+        setLabelPhoto(stamped)
+        setCapturedAt((prev) => prev ?? takenAt)
+        usedFixRef.current = gpsFix
+      } else {
+        setWherePhoto(stamped)
+      }
+    } catch (e) {
+      setError(`Photo processing failed: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
 
-  const failureReason =
-    failurePreset === 'Other…' ? failureOther.trim() : failurePreset
+  const failureReason = failurePreset === 'Other…' ? failureOther.trim() : failurePreset
   const canComplete =
     !!labelPhoto && !submitting && (outcome === 'delivered' || failureReason.length > 0)
 
@@ -77,6 +77,8 @@ export function CaptureScreen({
     }
 
     try {
+      const gpsFix = usedFixRef.current ?? (await getFix())
+      const signature = (await sigRef.current?.getBlob()) ?? null
       const result = await completePodOnline({
         parcel,
         trackingScanned,
@@ -85,8 +87,8 @@ export function CaptureScreen({
         receivedBy: receivedBy.trim(),
         capturedAt,
         photos,
-        location: null, // Checkpoint 4
-        signature: null, // Checkpoint 4
+        location: { lat: gpsFix.lat, lng: gpsFix.lng, accuracyM: gpsFix.accuracyM, simulated: gpsFix.simulated },
+        signature,
       })
       onComplete(result, labelPhoto.url)
     } catch (e) {
@@ -118,8 +120,8 @@ export function CaptureScreen({
         <PhotoZone
           photo={labelPhoto}
           prompt="Tap to photograph the label"
-          sub="Camera opens on mobile · file picker on desktop"
-          onPhoto={(f) => takePhoto(f, 'label')}
+          sub="Timestamp + GPS are burned into the image"
+          onPhoto={(f) => void takePhoto(f, 'label')}
           onRetake={() => setLabelPhoto(null)}
         />
 
@@ -129,19 +131,24 @@ export function CaptureScreen({
             prompt="Add photo of where it was left"
             sub="Optional"
             compact
-            onPhoto={(f) => takePhoto(f, 'where_left')}
+            onPhoto={(f) => void takePhoto(f, 'where_left')}
             onRetake={() => setWherePhoto(null)}
           />
         </div>
 
-        {/* Meta chips — GPS goes live (with the gold simulated state) in Checkpoint 4 */}
         <div className="mt-3 grid grid-cols-2 gap-[9px]">
           <Chip
             k="Timestamp"
             v={capturedAt?.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) ?? '—'}
             pending={!capturedAt}
           />
-          <Chip k="GPS location" v="—" pending />
+          {/* Gold + "(simulated)" when the fix is a fallback (§7) */}
+          <Chip
+            k={fix?.simulated ? 'GPS location (simulated)' : 'GPS location'}
+            v={fix ? `${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}` : 'acquiring…'}
+            pending={!fix}
+            sim={fix?.simulated}
+          />
         </div>
 
         <Field label="Received by">
@@ -189,9 +196,13 @@ export function CaptureScreen({
           </Field>
         )}
 
+        <Field label="Signature (optional)">
+          <SignatureBox handleRef={sigRef} />
+        </Field>
+
         {error && (
           <div className="mt-3.5 rounded-[11px] border border-fail/40 bg-fail/10 px-3 py-2.5 text-[13px] text-fail">
-            Upload failed: {error}. Check the connection — offline capture arrives in Checkpoint 6.
+            {error}. Check the connection — offline capture arrives in Checkpoint 6.
           </div>
         )}
 
@@ -225,7 +236,7 @@ function PhotoZone({
   onPhoto,
   onRetake,
 }: {
-  photo: PhotoState | null
+  photo: StampedPhoto | null
   prompt: string
   sub: string
   compact?: boolean

@@ -26,7 +26,11 @@ export function ResultScreen({
     received_by: record.received_by ?? (failed ? '—' : 'Signed for'),
     captured_at: record.captured_at,
     synced_at: record.synced_at,
+    location: result.location
+      ? { lat: result.location.lat, lng: result.location.lng, accuracy_m: result.location.accuracyM }
+      : null,
     gps_simulated: record.gps_simulated,
+    signature: record.signature_path,
     photos: photoPaths.map((p) => ({
       type: p.type,
       stored: p.path,
