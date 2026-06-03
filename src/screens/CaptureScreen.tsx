@@ -15,9 +15,13 @@ const FAILURE_PRESETS = ['No access', 'Refused', 'Address not found', 'Other…'
 /** Driver-readable explanations for a missing fix — actionable where the
  *  driver can act (permission, location services), honest where they can't.
  *  There is no simulated fallback: a capture without GPS records none. */
+// iOS denies silently when its own switches are off — point at Settings, not
+// at a Chrome padlock the user doesn't have.
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent)
 const NO_FIX_NOTES: Record<NoFixReason, string> = {
-  denied:
-    'Location is blocked for this site — allow it via the padlock icon, then retry. (Chrome blocks it silently on self-signed HTTPS dev URLs — use a trusted address.)',
+  denied: IS_IOS
+    ? 'Location is blocked by iOS. Settings → Privacy & Security → Location Services: on, and set your browser (Safari Websites / Chrome) to While Using the App. If you ever tapped Don’t Allow here: ᴀA menu → Website Settings → Location → Ask. Then Retry.'
+    : 'Location is blocked for this site — allow it via the padlock icon, then retry. (Chrome blocks it silently on self-signed HTTPS dev URLs — use a trusted address.)',
   insecure:
     'Real GPS needs a secure connection — open the app over HTTPS (npm run dev:https on the LAN).',
   timeout: 'Could not get a GPS fix in time — retry, ideally with a clearer view of the sky.',
@@ -245,6 +249,15 @@ export function CaptureScreen({
             <button type="button" onClick={retry} className="flex-none font-semibold underline">
               Retry
             </button>
+          </div>
+        )}
+
+        {/* GPS recovered after a fix-less photo: the record honours the
+            stamp, so the only way to get the position on it is a re-shoot */}
+        {usedFix === null && fix && (
+          <div className="mt-2 rounded-[11px] border border-gold/40 bg-gold/10 px-3 py-2 text-[12px] leading-[1.45] text-[#8a6d1a]">
+            GPS is working now, but the label photo was taken without a fix — tap{' '}
+            <span className="font-semibold">Retake</span> to record your position.
           </div>
         )}
 
