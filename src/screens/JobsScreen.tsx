@@ -165,10 +165,17 @@ function ImportCard({ onImported }: { onImported: () => void }) {
   const [parsing, setParsing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  const [showMapping, setShowMapping] = useState(false)
 
   const result = useMemo(
     () => (parsed ? buildParcelInputs(parsed.rows, mapping) : null),
     [parsed, mapping],
+  )
+  // "Confident" = every required column got auto-matched. When so, we hide the
+  // mapping step entirely and just confirm; the dropdowns stay as a fallback.
+  const confident = useMemo(
+    () => MANIFEST_FIELDS.filter((f) => f.required).every((f) => mapping[f.key]),
+    [mapping],
   )
 
   async function onFile(file: File) {
@@ -181,8 +188,11 @@ function ImportCard({ onImported }: { onImported: () => void }) {
         setParsing(false)
         return
       }
+      const m = autoMap(p.headers)
       setParsed(p)
-      setMapping(autoMap(p.headers))
+      setMapping(m)
+      // Show the dropdowns only if a required column wasn't auto-matched.
+      setShowMapping(!MANIFEST_FIELDS.filter((f) => f.required).every((f) => m[f.key]))
       setFilename(file.name)
       setJobName(file.name.replace(/\.[^.]+$/, ''))
     } catch (e) {
@@ -194,6 +204,7 @@ function ImportCard({ onImported }: { onImported: () => void }) {
   function reset() {
     setParsed(null)
     setMapping({})
+    setShowMapping(false)
     setFilename('')
     setJobName('')
     setProblem(null)
@@ -281,29 +292,63 @@ function ImportCard({ onImported }: { onImported: () => void }) {
               </p>
             </div>
 
-            <p className="section-label mb-2">Map columns</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {MANIFEST_FIELDS.map((f) => (
-                <div key={f.key} className="flex items-center justify-between gap-3 rounded-[11px] border border-line bg-paper/40 px-3 py-2">
-                  <span className="text-[13px] font-semibold text-ink">
-                    {f.label}
-                    {f.required && <span className="text-fail"> *</span>}
-                  </span>
-                  <select
-                    value={mapping[f.key] ?? ''}
-                    onChange={(e) => setMapping((m) => ({ ...m, [f.key]: e.target.value || undefined }))}
-                    className="max-w-[60%] rounded-[9px] border border-line bg-white px-2 py-1.5 text-[12.5px] text-ink focus:border-navy-500 focus:outline-none"
-                  >
-                    <option value="">— none —</option>
-                    {parsed.headers.map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
+            {confident && !showMapping ? (
+              <div className="flex items-center justify-between gap-3 rounded-[11px] border border-ok/30 bg-ok/5 px-3 py-2.5">
+                <span className="text-[12.5px] text-ink">
+                  <span className="font-semibold text-ok">✓ Columns matched automatically</span>
+                  <span className="text-muted"> — tracking, recipient and address all detected.</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowMapping(true)}
+                  className="flex-none text-[12.5px] font-semibold text-navy-500 underline"
+                >
+                  Review
+                </button>
+              </div>
+            ) : (
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="section-label">Map columns</p>
+                  {confident && (
+                    <button
+                      type="button"
+                      onClick={() => setShowMapping(false)}
+                      className="text-[12px] font-semibold text-navy-500 underline"
+                    >
+                      Done
+                    </button>
+                  )}
                 </div>
-              ))}
-            </div>
+                {!confident && (
+                  <p className="mb-2 text-[12px] text-fail">
+                    Couldn't match a required column (marked *) — please pick it below.
+                  </p>
+                )}
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {MANIFEST_FIELDS.map((f) => (
+                    <div key={f.key} className="flex items-center justify-between gap-3 rounded-[11px] border border-line bg-paper/40 px-3 py-2">
+                      <span className="text-[13px] font-semibold text-ink">
+                        {f.label}
+                        {f.required && <span className="text-fail"> *</span>}
+                      </span>
+                      <select
+                        value={mapping[f.key] ?? ''}
+                        onChange={(e) => setMapping((m) => ({ ...m, [f.key]: e.target.value || undefined }))}
+                        className="max-w-[60%] rounded-[9px] border border-line bg-white px-2 py-1.5 text-[12.5px] text-ink focus:border-navy-500 focus:outline-none"
+                      >
+                        <option value="">— none —</option>
+                        {parsed.headers.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {result && (
               <>
