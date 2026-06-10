@@ -16,15 +16,32 @@ const env = Object.fromEntries(
 const URL_ = env.VITE_SUPABASE_URL
 const ANON = env.VITE_SUPABASE_ANON_KEY
 
+/** env var → .env → local CLI (same lookup as scripts/seed-auth.mjs). */
 function serviceKey() {
   if (process.env.SUPABASE_SERVICE_ROLE_KEY) return process.env.SUPABASE_SERVICE_ROLE_KEY
-  const r = spawnSync('node_modules/@supabase/cli-windows-x64/bin/supabase.exe', ['status', '-o', 'env'], {
-    encoding: 'utf8', shell: true,
-  })
-  return `${r.stdout ?? ''}${r.stderr ?? ''}`.match(/SERVICE_ROLE_KEY="?([^"\r\n]+)"?/)?.[1]?.trim()
+  if (env.SUPABASE_SERVICE_ROLE_KEY) return env.SUPABASE_SERVICE_ROLE_KEY
+  const tries = [
+    ['node_modules/@supabase/cli-windows-x64/bin/supabase.exe', ['status', '-o', 'env']],
+    ['npx', ['supabase', 'status', '-o', 'env']],
+  ]
+  for (const [cmd, args] of tries) {
+    try {
+      const r = spawnSync(cmd, args, { encoding: 'utf8', shell: process.platform === 'win32' })
+      const m = `${r.stdout ?? ''}${r.stderr ?? ''}`.match(/SERVICE_ROLE_KEY="?([^"\r\n]+)"?/)
+      if (m) return m[1].trim()
+    } catch {
+      /* try the next */
+    }
+  }
+  return null
 }
 
-const svc = createClient(URL_, serviceKey(), { auth: { persistSession: false } })
+const SERVICE_KEY = serviceKey()
+if (!SERVICE_KEY) {
+  console.error('✗ No service-role key. Set SUPABASE_SERVICE_ROLE_KEY (find it via `npx supabase status`).')
+  process.exit(1)
+}
+const svc = createClient(URL_, SERVICE_KEY, { auth: { persistSession: false } })
 const asUser = async (email) => {
   const c = createClient(URL_, ANON, { auth: { persistSession: false } })
   const { error } = await c.auth.signInWithPassword({ email, password: 'citipost' })
