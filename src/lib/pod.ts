@@ -109,9 +109,9 @@ export async function uploadPod(pod: QueuedPod): Promise<string | null> {
         gps_source: pod.location?.source ?? null, // null = no fix at capture
         dest_distance_m: pod.destDistanceM,
         signature_path: pod.signature ? signaturePath(pod.podId) : null,
-        // Pre-allocation queued items have no driverId — fall back to the demo
-        // driver so they still upload cleanly.
-        driver_id: pod.driverId ?? 'drv_demo',
+        // The signed-in driver. Under RLS the insert is rejected unless this
+        // matches the caller's profile driver_id (or the caller is an admin).
+        driver_id: pod.driverId,
       },
       { onConflict: 'id' },
     )

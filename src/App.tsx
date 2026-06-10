@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { AppShell } from './components/AppShell'
 import { useFleet } from './hooks/useFleet'
 import { useParcels } from './hooks/useParcels'
+import { signOut, type Profile } from './hooks/useSession'
 import type { QueuedPod } from './lib/db'
-import { getDriverId, setDriverId } from './lib/driver'
 import { subscribeSync } from './lib/syncEvents'
 import { isRollover, type Parcel } from './lib/types'
 import { CaptureScreen } from './screens/CaptureScreen'
@@ -16,25 +16,19 @@ type View =
   | { name: 'capture'; parcel: Parcel; scannedValue: string }
   | { name: 'done'; pod: QueuedPod; previewUrl: string }
 
-export default function App() {
+export default function App({ profile }: { profile: Profile }) {
   const { parcels, error, reload } = useParcels()
   const { fleet, error: fleetError } = useFleet()
   const [view, setView] = useState<View>({ name: 'stops' })
-  // Which driver this device is "signed in" as (persisted). Drives both the
-  // run filter and the driver_id stamped onto captures.
-  const [driverId, setDriver] = useState(getDriverId)
+  // Identity is the signed-in session — drives the run filter and the
+  // driver_id stamped onto captures. RLS enforces the same scope server-side.
+  const driverId = profile.driverId ?? ''
 
   // Stop statuses change server-side as the sync worker drains the queue —
   // refresh the list whenever the queue moves (no-op when offline).
   useEffect(() => subscribeSync(() => void reload()), [reload])
 
-  function selectDriver(id: string) {
-    setDriverId(id) // persist
-    setDriver(id)
-    setView({ name: 'stops' }) // a different run — drop any in-progress capture
-  }
-
-  // Filter the run to the selected driver's routes. Degrade gracefully: while
+  // Filter the run to the signed-in driver's routes. Degrade gracefully: while
   // the fleet is still loading we hold the loading state; if it fails to load
   // or has no routes (e.g. an un-migrated DB), fall back to showing every
   // parcel so the app still works.
@@ -71,7 +65,7 @@ export default function App() {
   }
 
   return (
-    <AppShell drivers={fleet?.drivers ?? null} selectedDriverId={driverId} onSelectDriver={selectDriver}>
+    <AppShell fullName={profile.fullName} onSignOut={() => void signOut()}>
       {view.name === 'stops' && (
         <StopsScreen
           parcels={myParcels}

@@ -116,19 +116,19 @@ create table pod_photos (
 
 create index pod_photos_pod_idx on pod_photos(pod_id);
 
--- Evidence bucket. Public read keeps the dispatcher view simple (no signed
--- URLs in a PoC); uploads are allowed to this bucket only.
+-- Evidence bucket — private under RLS. Only signed-in users upload; the
+-- dispatcher reads photos via short-lived signed URLs.
 insert into storage.buckets (id, name, public)
-values ('pod-evidence', 'pod-evidence', true)
+values ('pod-evidence', 'pod-evidence', false)
 on conflict (id) do nothing;
 
 create policy "pod evidence read"
   on storage.objects for select
-  using (bucket_id = 'pod-evidence');
+  using (bucket_id = 'pod-evidence' and auth.uid() is not null);
 
 create policy "pod evidence upload"
   on storage.objects for insert
-  with check (bucket_id = 'pod-evidence');
+  with check (bucket_id = 'pod-evidence' and auth.uid() is not null);
 
 -- Demo fleet: 3 drivers each running one route. drv_demo = the
 -- design-reference driver, kept as the app's default identity.
@@ -182,15 +182,58 @@ update parcels p set route_id = r.id
   where p.area = any (r.areas)
     and p.tracking_number not in ('CP-100002-GB', 'CP-300007-GB');
 
--- Hosted-project gotcha: if RLS got enabled on these tables (dashboard
--- prompts encourage it), the anon key reads 0 rows and writes are rejected.
--- The PoC posture is RLS OFF (no auth, demo only) - enforce it explicitly:
-alter table drivers     disable row level security;
-alter table routes      disable row level security;
-alter table manifests   disable row level security;
-alter table parcels     disable row level security;
-alter table pod_records disable row level security;
-alter table pod_photos  disable row level security;
+-- Auth + RLS. Real Supabase Auth gates the app; a profiles row maps each user
+-- to a role (admin|driver) and, for drivers, a drivers.id. Create the demo
+-- users AFTER this runs — dashboard (Authentication → Users), or
+-- scripts/seed-auth.mjs with the host's service-role key.
+create table if not exists profiles (
+  id         uuid primary key references auth.users(id) on delete cascade,
+  role       text not null check (role in ('admin','driver')),
+  driver_id  text references drivers(id),
+  full_name  text,
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.auth_role() returns text
+  language sql stable security definer set search_path = public as $$
+  select role from profiles where id = auth.uid(); $$;
+create or replace function public.auth_driver_id() returns text
+  language sql stable security definer set search_path = public as $$
+  select driver_id from profiles where id = auth.uid(); $$;
+create or replace function public.is_admin() returns boolean
+  language sql stable security definer set search_path = public as $$
+  select coalesce(public.auth_role() = 'admin', false); $$;
+
+alter table profiles    enable row level security;
+alter table drivers     enable row level security;
+alter table routes      enable row level security;
+alter table manifests   enable row level security;
+alter table parcels     enable row level security;
+alter table pod_records enable row level security;
+alter table pod_photos  enable row level security;
+
+create policy profiles_select on profiles for select using (id = auth.uid() or public.is_admin());
+create policy drivers_select on drivers for select using (auth.uid() is not null);
+create policy drivers_admin_write on drivers for all using (public.is_admin()) with check (public.is_admin());
+create policy routes_select on routes for select using (public.is_admin() or driver_id = public.auth_driver_id());
+create policy routes_admin_write on routes for all using (public.is_admin()) with check (public.is_admin());
+create policy parcels_select on parcels for select
+  using (public.is_admin() or route_id in (select id from routes where driver_id = public.auth_driver_id()));
+create policy parcels_update on parcels for update
+  using (public.is_admin() or route_id in (select id from routes where driver_id = public.auth_driver_id()))
+  with check (public.is_admin() or route_id in (select id from routes where driver_id = public.auth_driver_id()));
+create policy parcels_admin_insert on parcels for insert with check (public.is_admin());
+create policy parcels_admin_delete on parcels for delete using (public.is_admin());
+create policy manifests_admin_all on manifests for all using (public.is_admin()) with check (public.is_admin());
+create policy pod_records_select on pod_records for select using (public.is_admin() or driver_id = public.auth_driver_id());
+create policy pod_records_insert on pod_records for insert with check (public.is_admin() or driver_id = public.auth_driver_id());
+create policy pod_records_update on pod_records for update
+  using (public.is_admin() or driver_id = public.auth_driver_id())
+  with check (public.is_admin() or driver_id = public.auth_driver_id());
+create policy pod_photos_select on pod_photos for select
+  using (exists (select 1 from pod_records pr where pr.id = pod_id and (public.is_admin() or pr.driver_id = public.auth_driver_id())));
+create policy pod_photos_insert on pod_photos for insert
+  with check (exists (select 1 from pod_records pr where pr.id = pod_id and (public.is_admin() or pr.driver_id = public.auth_driver_id())));
 
 -- Realtime: the dispatcher subscribes to pod_records; the driver app and the
 -- allocation view subscribe to parcels so allocations appear live.

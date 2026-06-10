@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useFleet } from '../hooks/useFleet'
+import { signOut } from '../hooks/useSession'
 import {
   autoMap,
   buildParcelInputs,
@@ -101,9 +102,13 @@ export function JobsScreen() {
     <div className="min-h-dvh sm:px-8 sm:py-8">
       <div className="mx-auto max-w-4xl">
         <header className="gold-underline relative bg-navy px-5 pb-5 pt-[max(16px,env(safe-area-inset-top))] text-white sm:rounded-t-2xl sm:px-6">
-          <a href="#/" className="text-[11px] font-semibold text-[#9fb0d6]">
-            ‹ Driver app
-          </a>
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="text-[11px] font-semibold text-[#9fb0d6] transition hover:text-white"
+          >
+            Sign out ›
+          </button>
           <div className="mt-1 text-[10.5px] font-semibold uppercase tracking-[2px] text-gold-soft">
             Citipost · Dispatch
           </div>

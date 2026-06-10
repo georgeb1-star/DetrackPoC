@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import { signOut } from '../hooks/useSession'
 import { fmtDistance, parseEwkbPoint } from '../lib/geo'
-import { evidenceUrl } from '../lib/pod'
 import { supabase } from '../lib/supabase'
 import type { Parcel, PodPhoto, PodRecord } from '../lib/types'
 
@@ -15,6 +15,7 @@ interface JoinedPod extends PodRecord {
  *  same navy/gold/paper language as the driver app. */
 export function DispatcherScreen() {
   const [pods, setPods] = useState<JoinedPod[] | null>(null)
+  const [urls, setUrls] = useState<Map<string, string>>(new Map())
   const [error, setError] = useState<string | null>(null)
   const [lightbox, setLightbox] = useState<string | null>(null)
 
@@ -23,11 +24,27 @@ export function DispatcherScreen() {
       .from('pod_records')
       .select('*, parcel:parcels(*), photos:pod_photos(*)')
       .order('created_at', { ascending: false })
-    if (error) setError(error.message)
-    else {
-      setPods(data as unknown as JoinedPod[])
-      setError(null)
+    if (error) {
+      setError(error.message)
+      return
     }
+    const rows = data as unknown as JoinedPod[]
+    setPods(rows)
+    setError(null)
+    // The evidence bucket is private under RLS — mint short-lived signed URLs
+    // for every photo + signature so the dispatcher can view them.
+    const paths = rows.flatMap((pod) => [
+      ...pod.photos.map((ph) => ph.storage_path),
+      ...(pod.signature_path ? [pod.signature_path] : []),
+    ])
+    if (paths.length === 0) {
+      setUrls(new Map())
+      return
+    }
+    const { data: signed } = await supabase.storage.from('pod-evidence').createSignedUrls(paths, 3600)
+    setUrls(
+      new Map((signed ?? []).filter((s) => s.signedUrl).map((s) => [s.path as string, s.signedUrl as string])),
+    )
   }, [])
 
   // Realtime: new PODs appear the instant a driver device syncs (the table is
@@ -51,9 +68,13 @@ export function DispatcherScreen() {
     <div className="min-h-dvh sm:px-8 sm:py-8">
       <div className="mx-auto max-w-4xl">
         <header className="gold-underline relative bg-navy px-5 pb-5 pt-[max(16px,env(safe-area-inset-top))] text-white sm:rounded-t-2xl sm:px-6">
-          <a href="#/" className="text-[11px] font-semibold text-[#9fb0d6]">
-            ‹ Driver app
-          </a>
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="text-[11px] font-semibold text-[#9fb0d6] transition hover:text-white"
+          >
+            Sign out ›
+          </button>
           <div className="mt-1 text-[10.5px] font-semibold uppercase tracking-[2px] text-gold-soft">
             Citipost · Dispatch
           </div>
@@ -102,7 +123,7 @@ export function DispatcherScreen() {
 
           <div className="flex flex-col gap-3">
             {pods?.map((pod) => (
-              <PodCard key={pod.id} pod={pod} onPhoto={setLightbox} />
+              <PodCard key={pod.id} pod={pod} urls={urls} onPhoto={setLightbox} />
             ))}
           </div>
         </div>
@@ -125,9 +146,20 @@ export function DispatcherScreen() {
   )
 }
 
-function PodCard({ pod, onPhoto }: { pod: JoinedPod; onPhoto: (url: string) => void }) {
+function PodCard({
+  pod,
+  urls,
+  onPhoto,
+}: {
+  pod: JoinedPod
+  urls: Map<string, string>
+  onPhoto: (url: string) => void
+}) {
   const label = pod.photos.find((p) => p.photo_type === 'label') ?? pod.photos[0]
   const where = pod.photos.find((p) => p.photo_type === 'where_left')
+  const labelUrl = label ? urls.get(label.storage_path) : undefined
+  const whereUrl = where ? urls.get(where.storage_path) : undefined
+  const signatureUrl = pod.signature_path ? urls.get(pod.signature_path) : undefined
   const point = parseEwkbPoint(pod.location)
   const failed = pod.status === 'failed'
   // The scan-to-attach proof: the scanned value vs the parcel it linked to
@@ -138,34 +170,26 @@ function PodCard({ pod, onPhoto }: { pod: JoinedPod; onPhoto: (url: string) => v
       <div className="flex flex-col gap-4 p-4 sm:flex-row">
         {/* Stamped photo thumbnails */}
         <div className="flex flex-none gap-2 sm:w-[150px] sm:flex-col">
-          {label ? (
+          {label && labelUrl ? (
             <button
               type="button"
-              onClick={() => onPhoto(evidenceUrl(label.storage_path))}
+              onClick={() => onPhoto(labelUrl)}
               className="block w-[150px] flex-none cursor-zoom-in overflow-hidden rounded-xl border border-line"
             >
-              <img
-                src={evidenceUrl(label.storage_path)}
-                alt="label"
-                className="aspect-[4/3] w-full object-cover"
-              />
+              <img src={labelUrl} alt="label" className="aspect-[4/3] w-full object-cover" />
             </button>
           ) : (
             <div className="flex aspect-[4/3] w-[150px] items-center justify-center rounded-xl border border-line bg-paper text-[11px] text-muted">
               no photo
             </div>
           )}
-          {where && (
+          {where && whereUrl && (
             <button
               type="button"
-              onClick={() => onPhoto(evidenceUrl(where.storage_path))}
+              onClick={() => onPhoto(whereUrl)}
               className="block w-[150px] flex-none cursor-zoom-in overflow-hidden rounded-xl border border-line"
             >
-              <img
-                src={evidenceUrl(where.storage_path)}
-                alt="where left"
-                className="aspect-[4/3] w-full object-cover"
-              />
+              <img src={whereUrl} alt="where left" className="aspect-[4/3] w-full object-cover" />
             </button>
           )}
         </div>
@@ -259,11 +283,11 @@ function PodCard({ pod, onPhoto }: { pod: JoinedPod; onPhoto: (url: string) => v
             />
           </div>
 
-          {pod.signature_path && (
+          {signatureUrl && (
             <div className="mt-3">
               <div className="text-[10px] font-bold uppercase tracking-[0.6px] text-muted">Signature</div>
               <img
-                src={evidenceUrl(pod.signature_path)}
+                src={signatureUrl}
                 alt="signature"
                 className="mt-1 h-12 rounded-[8px] border border-line bg-white px-2"
               />
