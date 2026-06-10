@@ -53,3 +53,23 @@ update parcels p set route_id = r.id
   from routes r
   where p.area = any (r.areas)
     and p.tracking_number not in ('CP-100002-GB', 'CP-300007-GB');
+
+-- Sites: stores/depots a driver scans-and-captures at without a per-item
+-- manifest. One per route so every demo login has a site on their run, plus
+-- one unallocated so the admin Sites view has an allocation to demo.
+insert into sites (name, address_line, postcode, kind, destination, route_id) values
+  ('Citipost Collect — Camden',  '112 Camden High Street, London',     'NW1 0LU',
+   'store', st_setsrid(st_makepoint(-0.14260, 51.53900), 4326)::geography,
+   (select id from routes where name = 'Greater London')),
+
+  ('Heathrow Air Freight Depot', 'Shoreham Road East, Hounslow',       'TW6 3UA',
+   'depot', st_setsrid(st_makepoint(-0.44640, 51.46070), 4326)::geography,
+   (select id from routes where name = 'International & Air')),
+
+  ('Leeds Fulfilment Centre',    '40 Whitehall Road, Leeds',           'LS12 1BE',
+   'both',  st_setsrid(st_makepoint(-1.56230, 53.79280), 4326)::geography,
+   (select id from routes where name = 'Fulfilment & Sort')),
+
+  ('Citipost Collect — Norwich', '5 Gentlemans Walk, Norwich',         'NR2 1NA',
+   'store', st_setsrid(st_makepoint(1.29310, 52.62850), 4326)::geography,
+   null);
