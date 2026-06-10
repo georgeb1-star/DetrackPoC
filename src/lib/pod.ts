@@ -65,6 +65,53 @@ export async function queuePod(bundle: CaptureBundle): Promise<QueuedPod> {
   return pod
 }
 
+/** A capture made against a SITE (store/depot) rather than a manifested parcel.
+ *  The driver scans the item's barcode on the spot; there's no pre-loaded
+ *  parcel, so the POD carries site_id + the scanned tracking and parcel_id is
+ *  null (RLS makes parcel inserts admin-only, so we never fabricate one). */
+export interface SiteCaptureBundle {
+  siteId: string
+  siteName: string
+  trackingScanned: string
+  status: PodStatus
+  failureReason: string | null
+  receivedBy: string
+  capturedAt: Date
+  photos: CapturedPhoto[]
+  location: Fix | null
+  destDistanceM: number | null
+  signature: Blob | null
+  driverId: string
+}
+
+/** Queue a site capture — same local-first path as queuePod (Dexie first). */
+export async function queueSitePod(bundle: SiteCaptureBundle): Promise<QueuedPod> {
+  const pod: QueuedPod = {
+    podId: crypto.randomUUID(),
+    parcelId: null,
+    parcelRef: bundle.siteName, // display label on the receipt / queue
+    trackingScanned: bundle.trackingScanned,
+    status: bundle.status,
+    failureReason: bundle.failureReason,
+    receivedBy: bundle.receivedBy || null,
+    capturedAt: bundle.capturedAt.toISOString(),
+    location: bundle.location,
+    destDistanceM: bundle.destDistanceM,
+    photos: bundle.photos.map((p) => ({ type: p.type, blob: p.blob, origKb: p.origKb, compressedKb: p.compressedKb })),
+    signature: bundle.signature,
+    driverId: bundle.driverId,
+    siteId: bundle.siteId,
+    synced: 0,
+    syncedAt: null,
+    queuedAt: new Date().toISOString(),
+    attempts: 0,
+    lastError: null,
+  }
+  await db.pods.add(pod)
+  emitSync()
+  return pod
+}
+
 /**
  * Push one queued POD to Supabase. Every step is idempotent on the
  * client-generated podId (storage upsert, on-conflict upserts), so a retry
@@ -112,6 +159,9 @@ export async function uploadPod(pod: QueuedPod): Promise<string | null> {
         // The signed-in driver. Under RLS the insert is rejected unless this
         // matches the caller's profile driver_id (or the caller is an admin).
         driver_id: pod.driverId,
+        // Set for a capture against a site (store/depot) with no manifested
+        // parcel; null for a normal parcel capture.
+        site_id: pod.siteId ?? null,
       },
       { onConflict: 'id' },
     )

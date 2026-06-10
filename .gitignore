@@ -21,3 +21,5 @@ supabase/.branches/
 .DS_Store
 Thumbs.db
 *.log
+
+.vercel

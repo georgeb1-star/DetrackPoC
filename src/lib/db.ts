@@ -22,6 +22,9 @@ export interface QueuedPod {
   /** Driver who made the capture — stamped onto pod_records.driver_id.
    *  Optional so pre-allocation queued items still upload (fall back to demo). */
   driverId?: string
+  /** Set when the capture is against a SITE (store/depot) with no manifested
+   *  parcel — written to pod_records.site_id, parcelId stays null. */
+  siteId?: string | null
   /** 0 = queued, 1 = synced (numbers — Dexie can't index booleans) */
   synced: 0 | 1
   /** Server-issued trust stamp, copied back after upload */

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { BarcodeScanner } from '../components/BarcodeScanner'
 import { TopBar } from '../components/TopBar'
 import { useSyncStatus } from '../hooks/useSyncStatus'
-import { isRollover, MAX_DELIVERY_ATTEMPTS, type Parcel, type PodStatus } from '../lib/types'
+import { isRollover, MAX_DELIVERY_ATTEMPTS, type Parcel, type PodStatus, type Site } from '../lib/types'
 
 const STATUS_STYLES: Record<Parcel['status'], string> = {
   pending: 'text-muted',
@@ -19,12 +19,17 @@ export function StopsScreen({
   parcels,
   error,
   routeLabel,
+  sites,
+  onSelectSite,
   onSelect,
 }: {
   parcels: Parcel[] | null
   error: string | null
   /** The route(s) the signed-in driver runs — shown in the run-sheet header. */
   routeLabel?: string
+  /** Stores/depots on this driver's route(s) — the no-manifest scan path. */
+  sites?: Site[]
+  onSelectSite?: (site: Site) => void
   onSelect: (parcel: Parcel, scannedValue?: string) => void
 }) {
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -147,6 +152,39 @@ export function StopsScreen({
                   </StopRow>
                 )
               })}
+            </div>
+          </>
+        )}
+
+        {/* Sites (stores/depots) on this run — no manifest, scan items on the
+            spot and capture against the site. */}
+        {sites && sites.length > 0 && (
+          <>
+            <p className="section-label mb-3 mt-8">Sites · scan &amp; capture</p>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {sites.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onSelectSite?.(s)}
+                  className="flex h-full w-full flex-col rounded-2xl border border-line bg-white p-4 text-left transition hover:border-navy-500/40 hover:shadow-[0_6px_20px_-10px_rgba(16,25,46,.35)] active:translate-y-px"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-[15px] font-semibold">{s.name}</div>
+                    <span className="flex-none rounded-full border border-navy-500/30 bg-navy-500/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] text-navy-500">
+                      {s.kind === 'both' ? 'Store · Depot' : s.kind}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[13px] leading-[1.45] text-muted">
+                    {s.address_line || 'No address'}
+                    {s.postcode ? `, ${s.postcode}` : ''}
+                  </div>
+                  <div className="mt-auto flex items-center justify-between pt-3">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.6px] text-gold">No manifest</span>
+                    <span className="text-[12px] font-semibold text-navy-500">Scan items →</span>
+                  </div>
+                </button>
+              ))}
             </div>
           </>
         )}

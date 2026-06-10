@@ -2,18 +2,21 @@ import { useEffect, useMemo, useState } from 'react'
 import { AppShell } from './components/AppShell'
 import { useFleet } from './hooks/useFleet'
 import { useParcels } from './hooks/useParcels'
+import { useSites } from './hooks/useSites'
 import { signOut, type Profile } from './hooks/useSession'
 import type { QueuedPod } from './lib/db'
 import { subscribeSync } from './lib/syncEvents'
-import { isRollover, type Parcel } from './lib/types'
+import { isRollover, type Parcel, type Site } from './lib/types'
 import { CaptureScreen } from './screens/CaptureScreen'
 import { ResultScreen } from './screens/ResultScreen'
+import { SiteCaptureScreen } from './screens/SiteCaptureScreen'
 import { StopsScreen } from './screens/StopsScreen'
 
 /** Simple screen state machine — a PoC doesn't need a router. */
 type View =
   | { name: 'stops' }
   | { name: 'capture'; parcel: Parcel; scannedValue: string }
+  | { name: 'site'; site: Site }
   | { name: 'done'; pod: QueuedPod; previewUrl: string }
 
 export default function App({ profile }: { profile: Profile }) {
@@ -23,6 +26,8 @@ export default function App({ profile }: { profile: Profile }) {
   // Identity is the signed-in session — drives the run filter and the
   // driver_id stamped onto captures. RLS enforces the same scope server-side.
   const driverId = profile.driverId ?? ''
+  // Sites (stores/depots) on this driver's route(s), for the no-manifest path.
+  const { sites } = useSites()
 
   // Stop statuses change server-side as the sync worker drains the queue —
   // refresh the list whenever the queue moves (no-op when offline).
@@ -64,6 +69,11 @@ export default function App({ profile }: { profile: Profile }) {
     )
   }
 
+  // Scan-and-capture against a site (store/depot) — the no-manifest path.
+  if (view.name === 'site') {
+    return <SiteCaptureScreen site={view.site} driverId={driverId} onBack={() => setView({ name: 'stops' })} />
+  }
+
   return (
     <AppShell fullName={profile.fullName} onSignOut={() => void signOut()}>
       {view.name === 'stops' && (
@@ -71,6 +81,8 @@ export default function App({ profile }: { profile: Profile }) {
           parcels={myParcels}
           error={error}
           routeLabel={routeLabel}
+          sites={sites ?? undefined}
+          onSelectSite={(site) => setView({ name: 'site', site })}
           onSelect={(parcel, scannedValue) =>
             setView({ name: 'capture', parcel, scannedValue: scannedValue ?? parcel.tracking_number })
           }

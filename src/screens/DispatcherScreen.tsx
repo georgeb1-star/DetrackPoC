@@ -98,6 +98,12 @@ export function DispatcherScreen() {
             >
               Jobs
             </a>
+            <a
+              href="#/sites"
+              className="rounded-full px-3 py-1 text-[12px] font-semibold text-[#9fb0d6] transition hover:bg-white/5"
+            >
+              Sites
+            </a>
             <span className="rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold text-white">
               Captured PODs
             </span>

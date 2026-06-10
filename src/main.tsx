@@ -10,6 +10,7 @@ import { AllocateScreen } from './screens/AllocateScreen.tsx'
 import { DispatcherScreen } from './screens/DispatcherScreen.tsx'
 import { JobsScreen } from './screens/JobsScreen.tsx'
 import { LoginScreen } from './screens/LoginScreen.tsx'
+import { SitesScreen } from './screens/SitesScreen.tsx'
 import PodCaptureScreen from './components/PodCaptureScreen.tsx'
 
 // Service worker with an explicit update prompt — when a new build is
@@ -45,7 +46,7 @@ function Root() {
   const isAdmin = profile?.role === 'admin'
   // A driver who deep-links to a dispatcher route gets bounced to their run.
   useEffect(() => {
-    if (profile && !isAdmin && ['#/dispatch', '#/allocate', '#/jobs'].includes(hash)) {
+    if (profile && !isAdmin && ['#/dispatch', '#/allocate', '#/jobs', '#/sites'].includes(hash)) {
       window.location.hash = ''
     }
   }, [profile, isAdmin, hash])
@@ -60,7 +61,7 @@ function Root() {
   let screen
   if (isAdmin) {
     screen =
-      hash === '#/dispatch' ? <DispatcherScreen /> : hash === '#/jobs' ? <JobsScreen /> : <AllocateScreen />
+      hash === '#/dispatch' ? <DispatcherScreen /> : hash === '#/jobs' ? <JobsScreen /> : hash === '#/sites' ? <SitesScreen /> : <AllocateScreen />
   } else {
     screen = <App profile={profile} />
   }

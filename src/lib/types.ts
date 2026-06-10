@@ -50,6 +50,19 @@ export interface Manifest {
   created_at: string
 }
 
+/** A store or depot delivered to without a per-item manifest — the driver scans
+ *  and captures items against the site. `kind` is store, depot, or both.
+ *  Allocated to a route like parcels, so it lands on a driver's run. */
+export interface Site {
+  id: string
+  name: string
+  address_line: string | null
+  postcode: string | null
+  kind: 'store' | 'depot' | 'both'
+  destination: GeoPoint | string | null
+  route_id: string | null
+}
+
 export interface Parcel {
   id: string
   tracking_number: string
