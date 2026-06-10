@@ -94,9 +94,17 @@ export function BarcodeScanner({ onDecode }: { onDecode: (value: string) => void
   }, [])
 
   if (status === 'error') {
+    // A permission block is fixable on the spot — say how, like the GPS strip
+    const blocked = /denied|NotAllowed|dismissed/i.test(errMsg)
     return (
       <div className="rounded-2xl border border-line bg-white px-3 py-3 text-center text-[12.5px] text-muted">
         Camera unavailable ({errMsg}) — type the tracking number below instead.
+        {blocked && (
+          <span className="mt-1.5 block border-t border-line pt-1.5 text-left text-[12px] leading-snug">
+            To re-enable: click the padlock/tune icon by the address bar → allow{' '}
+            <span className="font-semibold text-ink">Camera</span>, then reload the page.
+          </span>
+        )}
       </div>
     )
   }
