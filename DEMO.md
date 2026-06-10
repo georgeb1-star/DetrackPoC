@@ -8,12 +8,28 @@ The six acceptance tests from §9 of the brief, in order. Total time ~10 minutes
 npm install
 npx supabase start          # Docker Desktop must be running
 copy .env.example .env      # paste the publishable/anon key printed above
+npx supabase db reset       # apply migrations + seed
+node scripts/seed-auth.mjs  # create the demo logins (admin + 3 drivers)
 npm run dev                 # http://localhost:5173
 ```
 
-- Driver app: **http://localhost:5173** · Dispatcher: **http://localhost:5173/#/dispatch**
+The app opens to a **sign-in portal**. Demo logins — password `citipost`:
+
+| Role | Email | Sees |
+| --- | --- | --- |
+| Dispatcher / admin | `admin@citipost.test` | allocate jobs, import manifests, export tracking CSV, every captured POD |
+| Driver — Sam | `sam@citipost.test` | only Sam's run (Greater London · Domestic) |
+| Driver — Priya | `priya@citipost.test` | only Priya's run (International) |
+| Driver — Dan | `dan@citipost.test` | only Dan's run (Fulfilment · Sortation) |
+
+Access is enforced **server-side with RLS**: a driver can't read another driver's
+jobs or PODs even by crafting a request, and dispatcher tools are admin-only.
+
+- Driver app (sign in as a driver): **http://localhost:5173**
+- Dispatcher (sign in as admin): **#/allocate** · **#/jobs** · **#/dispatch**
 - Supabase Studio (to inspect rows/files): **http://127.0.0.1:54323**
-- Re-seed at any time: `npx supabase db reset`
+- Re-seed at any time: `npx supabase db reset` **then** `node scripts/seed-auth.mjs`
+  (the reset wipes auth users; the script recreates them)
 - For the most faithful offline test use a production build: `npm run build && npm run preview`
 
 Scannable labels for every seeded parcel (Code 128 + QR, printable) live at

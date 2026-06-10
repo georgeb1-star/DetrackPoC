@@ -203,7 +203,7 @@ function buildTechRecord(pod: QueuedPod, synced: boolean) {
       orig_kb: p.origKb,
       compressed_kb: p.compressedKb,
     })),
-    driver_id: 'drv_demo',
+    driver_id: pod.driverId ?? null,
     device_queued: !synced,
   }
 }
