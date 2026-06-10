@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AdminShell } from '../components/AdminShell'
 import { useFleet } from '../hooks/useFleet'
-import { signOut } from '../hooks/useSession'
 import {
   autoMap,
   buildParcelInputs,
@@ -99,69 +99,33 @@ export function JobsScreen() {
   )
 
   return (
-    <div className="min-h-dvh sm:px-8 sm:py-8">
-      <div className="mx-auto max-w-4xl">
-        <header className="gold-underline relative bg-navy px-5 pb-5 pt-[max(16px,env(safe-area-inset-top))] text-white sm:rounded-t-2xl sm:px-6">
-          <button
-            type="button"
-            onClick={() => void signOut()}
-            className="text-[11px] font-semibold text-[#9fb0d6] transition hover:text-white"
-          >
-            Sign out ›
-          </button>
-          <div className="mt-1 text-[10.5px] font-semibold uppercase tracking-[2px] text-gold-soft">
-            Citipost · Dispatch
-          </div>
-          <div className="mt-[3px] flex items-baseline justify-between gap-4">
-            <h1 className="font-serif text-[22px]">Jobs & manifests</h1>
-            <span className="font-mono text-xs tracking-[1px] text-[#9fb0d6]">
-              {manifests ? `${manifests.length} job${manifests.length === 1 ? '' : 's'}` : '…'}
-            </span>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <a
-              href="#/allocate"
-              className="rounded-full px-3 py-1 text-[12px] font-semibold text-[#9fb0d6] transition hover:bg-white/5"
-            >
-              Allocate
-            </a>
-            <span className="rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold text-white">Jobs</span>
-            <a
-              href="#/sites"
-              className="rounded-full px-3 py-1 text-[12px] font-semibold text-[#9fb0d6] transition hover:bg-white/5"
-            >
-              Sites
-            </a>
-            <a
-              href="#/dispatch"
-              className="rounded-full px-3 py-1 text-[12px] font-semibold text-[#9fb0d6] transition hover:bg-white/5"
-            >
-              Captured PODs
-            </a>
-          </div>
-        </header>
-
-        <div className="min-h-[calc(100dvh-150px)] bg-paper p-4 sm:min-h-0 sm:rounded-b-2xl sm:p-5">
-          {error && (
-            <div className="mb-3 rounded-[11px] border border-fail/40 bg-fail/10 px-3 py-2.5 text-[13px] text-fail">
-              {error}. Is the local Supabase stack running (and the manifests migration applied)?
-            </div>
-          )}
-
-          <ImportCard onImported={() => void load()} />
-
-          <JobsList
-            manifests={manifests}
-            byManifest={byManifest}
-            routes={routes}
-            driverName={driverName}
-            routeName={routeName}
-            onAssign={(ids, routeId) => void assignParcels(ids, routeId)}
-            onError={setError}
-          />
+    <AdminShell
+      active="jobs"
+      title="Jobs & manifests"
+      meta={manifests ? `${manifests.length} job${manifests.length === 1 ? '' : 's'} · ${parcels.length} parcels` : '…'}
+    >
+      {error && (
+        <div className="mb-4 rounded-[11px] border border-fail/40 bg-fail/10 px-3 py-2.5 text-[13px] text-fail">
+          {error}. Is the local Supabase stack running (and the manifests migration applied)?
         </div>
+      )}
+
+      <div className="grid items-start gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+        <div className="xl:sticky xl:top-[82px]">
+          <ImportCard onImported={() => void load()} />
+        </div>
+
+        <JobsList
+          manifests={manifests}
+          byManifest={byManifest}
+          routes={routes}
+          driverName={driverName}
+          routeName={routeName}
+          onAssign={(ids, routeId) => void assignParcels(ids, routeId)}
+          onError={setError}
+        />
       </div>
-    </div>
+    </AdminShell>
   )
 }
 
@@ -249,7 +213,7 @@ function ImportCard({ onImported }: { onImported: () => void }) {
   }
 
   return (
-    <section className="mb-7 overflow-hidden rounded-2xl border border-line bg-white">
+    <section className="overflow-hidden rounded-2xl border border-line bg-white">
       <div className="border-b border-line bg-paper/60 px-4 py-2.5">
         <p className="section-label">Import a manifest</p>
       </div>

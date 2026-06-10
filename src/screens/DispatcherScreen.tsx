@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { signOut } from '../hooks/useSession'
+import { AdminShell } from '../components/AdminShell'
 import { fmtDistance, parseEwkbPoint } from '../lib/geo'
 import { supabase } from '../lib/supabase'
 import type { Parcel, PodPhoto, PodRecord } from '../lib/types'
@@ -66,75 +66,32 @@ export function DispatcherScreen() {
   }, [load])
 
   return (
-    // Edge-to-edge on mobile, contained card on larger screens
-    <div className="min-h-dvh sm:px-8 sm:py-8">
-      <div className="mx-auto max-w-4xl">
-        <header className="gold-underline relative bg-navy px-5 pb-5 pt-[max(16px,env(safe-area-inset-top))] text-white sm:rounded-t-2xl sm:px-6">
-          <button
-            type="button"
-            onClick={() => void signOut()}
-            className="text-[11px] font-semibold text-[#9fb0d6] transition hover:text-white"
-          >
-            Sign out ›
-          </button>
-          <div className="mt-1 text-[10.5px] font-semibold uppercase tracking-[2px] text-gold-soft">
-            Citipost · Dispatch
-          </div>
-          <div className="mt-[3px] flex items-baseline justify-between gap-4">
-            <h1 className="font-serif text-[22px]">Captured PODs</h1>
-            <span className="font-mono text-xs tracking-[1px] text-[#9fb0d6]">
-              {pods ? `${pods.length} record${pods.length === 1 ? '' : 's'}` : '…'}
-            </span>
-          </div>
-          {/* Dispatch tabs */}
-          <div className="mt-3 flex gap-2">
-            <a
-              href="#/allocate"
-              className="rounded-full px-3 py-1 text-[12px] font-semibold text-[#9fb0d6] transition hover:bg-white/5"
-            >
-              Allocate
-            </a>
-            <a
-              href="#/jobs"
-              className="rounded-full px-3 py-1 text-[12px] font-semibold text-[#9fb0d6] transition hover:bg-white/5"
-            >
-              Jobs
-            </a>
-            <a
-              href="#/sites"
-              className="rounded-full px-3 py-1 text-[12px] font-semibold text-[#9fb0d6] transition hover:bg-white/5"
-            >
-              Sites
-            </a>
-            <span className="rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold text-white">
-              Captured PODs
-            </span>
-          </div>
-        </header>
-
-        <div className="min-h-[calc(100dvh-110px)] bg-paper p-4 sm:min-h-0 sm:rounded-b-2xl sm:p-5">
-          {error && (
-            <div className="rounded-[11px] border border-fail/40 bg-fail/10 px-3 py-2.5 text-[13px] text-fail">
-              Couldn't load PODs: {error}. Is the local Supabase stack running?
-            </div>
-          )}
-
-          {pods && pods.length === 0 && (
-            <div className="py-14 text-center text-[13.5px] text-muted">
-              No PODs captured yet — complete a delivery in the{' '}
-              <a href="#/" className="text-navy-500 underline">
-                driver app
-              </a>
-              .
-            </div>
-          )}
-
-          <div className="flex flex-col gap-3">
-            {pods?.map((pod) => (
-              <PodCard key={pod.id} pod={pod} urls={urls} onPhoto={setLightbox} />
-            ))}
-          </div>
+    <AdminShell
+      active="pods"
+      title="Captured PODs"
+      meta={pods ? `${pods.length} record${pods.length === 1 ? '' : 's'}` : '…'}
+    >
+      {error && (
+        <div className="mb-4 rounded-[11px] border border-fail/40 bg-fail/10 px-3 py-2.5 text-[13px] text-fail">
+          Couldn't load PODs: {error}. Is the local Supabase stack running?
         </div>
+      )}
+
+      {pods && pods.length === 0 && (
+        <div className="rounded-2xl border border-line bg-white py-14 text-center text-[13.5px] text-muted">
+          No PODs captured yet — complete a delivery in the{' '}
+          <a href="#/" className="text-navy-500 underline">
+            driver app
+          </a>
+          .
+        </div>
+      )}
+
+      {/* Evidence board — two-up on wide monitors so the width gets used */}
+      <div className="grid items-start gap-4 xl:grid-cols-2">
+        {pods?.map((pod) => (
+          <PodCard key={pod.id} pod={pod} urls={urls} onPhoto={setLightbox} />
+        ))}
       </div>
 
       {/* thumbnail → full (§6.4) */}
@@ -150,7 +107,7 @@ export function DispatcherScreen() {
           />
         </div>
       )}
-    </div>
+    </AdminShell>
   )
 }
 

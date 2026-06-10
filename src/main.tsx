@@ -111,7 +111,7 @@ function NoProfileNotice({ message }: { message: string | null }) {
           onClick={() => void signOut()}
           className="mt-4 w-full rounded-[11px] bg-navy p-3 font-serif text-white transition hover:bg-navy-600"
         >
-          Sign out
+          Log out
         </button>
       </div>
     </div>

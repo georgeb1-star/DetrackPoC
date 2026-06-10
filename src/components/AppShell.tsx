@@ -48,7 +48,7 @@ export function AppShell({
           onClick={onSignOut}
           className="mt-auto flex items-center justify-between rounded-xl border border-white/[0.12] px-3.5 py-3 text-[13px] font-semibold text-[#cdd7ee] transition hover:bg-white/5"
         >
-          Sign out
+          Log out
           <SignOutGlyph />
         </button>
       </aside>
@@ -66,9 +66,9 @@ export function AppShell({
           <button
             type="button"
             onClick={onSignOut}
-            className="flex-none font-semibold text-gold-soft underline-offset-2 hover:underline"
+            className="flex-none rounded-lg border border-white/25 px-2.5 py-1 text-[12px] font-semibold text-white transition hover:bg-white/10"
           >
-            Sign out
+            Log out
           </button>
         </div>
       </header>
