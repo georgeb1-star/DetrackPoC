@@ -12,6 +12,12 @@ const env = Object.fromEntries(
     .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]),
 )
 const supabase = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY)
+// Dispatcher work is admin-only under RLS — sign in as the seeded admin first.
+const auth = await supabase.auth.signInWithPassword({ email: 'admin@citipost.test', password: 'citipost' })
+if (auth.error) {
+  console.error('✗ admin sign-in failed:', auth.error.message, '(run scripts/seed-auth.mjs)')
+  process.exit(1)
+}
 let failed = false
 const fail = (m, e) => {
   console.error('✗ ' + m, e?.message ?? e ?? '')
@@ -36,7 +42,7 @@ if (manifest) {
     recipient_name: `Smoke Recipient ${i + 1}`,
     address_line: '1 Test Street, Testville',
     postcode: 'AB1 2CD',
-    area: 'Domestic',
+    area: 'Greater London',
     manifest_id: manifest.id,
     meta: { 'Weight (kg)': 1.2 + i, source: 'smoke' },
   }))
