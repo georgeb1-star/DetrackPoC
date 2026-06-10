@@ -36,9 +36,18 @@ export function StopsScreen({
   // A queued FAILED capture keeps the stop active — it's an attempt, the
   // parcel will be retried (and rolls over) until MAX_DELIVERY_ATTEMPTS.
   const isDone = (p: Parcel) => p.status !== 'pending' || queuedParcels.get(p.id) === 'delivered'
+  // A completed stop only stays on the run for the day it was finished, so the
+  // page doesn't grow unbounded: show it if it was just captured on this device
+  // (queued), or its terminal completed_at is today. Older completed stops drop
+  // off the run — they're still stored server-side, just hidden here.
+  const startOfToday = new Date()
+  startOfToday.setHours(0, 0, 0, 0)
+  const completedToday = (p: Parcel) =>
+    queuedParcels.has(p.id) ||
+    (p.completed_at != null && new Date(p.completed_at).getTime() >= startOfToday.getTime())
   // useParcels orders by due_date first, so rollovers naturally lead the run
   const active = parcels?.filter((p) => !isDone(p)) ?? []
-  const completed = parcels?.filter(isDone) ?? []
+  const completed = parcels?.filter((p) => isDone(p) && completedToday(p)) ?? []
   const rollovers = active.filter((p) => isRollover(p)).length
 
   const today = new Date().toLocaleDateString('en-GB', {

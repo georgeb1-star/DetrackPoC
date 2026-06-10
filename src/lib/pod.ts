@@ -141,8 +141,14 @@ export async function uploadPod(pod: QueuedPod): Promise<string | null> {
   //    goes terminal as 'returned'. Read-modify-write is acceptable for a
   //    single-driver PoC; production would use an RPC/transaction.
   if (pod.parcelId) {
+    // completed_at stamps when the stop went terminal, so the run sheet can
+    // show only stops finished today (older ones drop off, but stay in the DB).
+    const completedAt = new Date().toISOString()
     if (pod.status === 'delivered') {
-      await supabase.from('parcels').update({ status: 'delivered' }).eq('id', pod.parcelId)
+      await supabase
+        .from('parcels')
+        .update({ status: 'delivered', completed_at: completedAt })
+        .eq('id', pod.parcelId)
     } else {
       const { data: parcel } = await supabase
         .from('parcels')
@@ -150,12 +156,15 @@ export async function uploadPod(pod: QueuedPod): Promise<string | null> {
         .eq('id', pod.parcelId)
         .single()
       const attempts = (parcel?.attempts ?? 0) + 1
+      const terminal = attempts >= MAX_DELIVERY_ATTEMPTS
       await supabase
         .from('parcels')
         .update({
           attempts,
           last_failure: pod.failureReason,
-          status: attempts >= MAX_DELIVERY_ATTEMPTS ? 'returned' : 'pending',
+          status: terminal ? 'returned' : 'pending',
+          // Re-attempts stay pending → no completion time until it goes terminal
+          completed_at: terminal ? completedAt : null,
         })
         .eq('id', pod.parcelId)
     }

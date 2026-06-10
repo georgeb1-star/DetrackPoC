@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useFleet } from '../hooks/useFleet'
 import {
   autoMap,
   buildParcelInputs,
@@ -11,41 +12,45 @@ import { supabase } from '../lib/supabase'
 import { buildTrackingCsv, downloadCsv, type TrackingPod } from '../lib/trackingExport'
 import type { Manifest } from '../lib/types'
 
-interface JobCounts {
-  total: number
-  delivered: number
+/** The parcel fields the Jobs view needs (a subset of the full row). */
+interface JobParcel {
+  id: string
+  tracking_number: string
+  recipient_name: string
+  address_line: string
+  postcode: string | null
+  area: string
+  status: string
+  route_id: string | null
+  manifest_id: string | null
 }
 
-/** Dispatcher Jobs view: import a parcel manifest (.xlsx) to create a batch of
- *  parcels, then export captured tracking data as the Evri-format CSV. Import
- *  auto-maps columns and previews before committing; parcels land unallocated
- *  and flow into the existing allocate → driver → POD pipeline. Same
- *  navy/gold/paper language as the other dispatch views. */
+/** Dispatcher Jobs view: import a parcel manifest (.xlsx) to create a job (a
+ *  batch of parcels), then open a job to pick its individual parcels and assign
+ *  the selected ones to a driver/route, and export captured tracking data as
+ *  the Evri-format CSV. Parcels flow through the existing driver → POD pipeline;
+ *  same navy/gold/paper language as the other dispatch views. */
 export function JobsScreen() {
+  const { fleet } = useFleet()
   const [manifests, setManifests] = useState<Manifest[] | null>(null)
-  const [counts, setCounts] = useState<Map<string, JobCounts>>(new Map())
+  const [parcels, setParcels] = useState<JobParcel[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const [mRes, pRes] = await Promise.all([
       supabase.from('manifests').select('*').order('imported_at', { ascending: false }),
-      supabase.from('parcels').select('manifest_id, status'),
+      supabase
+        .from('parcels')
+        .select('id, tracking_number, recipient_name, address_line, postcode, area, status, route_id, manifest_id')
+        .order('tracking_number'),
     ])
     if (mRes.error) {
       setError(mRes.error.message)
       return
     }
     setManifests(mRes.data as Manifest[])
+    setParcels((pRes.data ?? []) as JobParcel[])
     setError(null)
-    const c = new Map<string, JobCounts>()
-    for (const p of (pRes.data ?? []) as { manifest_id: string | null; status: string }[]) {
-      if (!p.manifest_id) continue
-      const cur = c.get(p.manifest_id) ?? { total: 0, delivered: 0 }
-      cur.total += 1
-      if (p.status === 'delivered') cur.delivered += 1
-      c.set(p.manifest_id, cur)
-    }
-    setCounts(c)
   }, [])
 
   useEffect(() => {
@@ -59,6 +64,38 @@ export function JobsScreen() {
       void supabase.removeChannel(channel)
     }
   }, [load])
+
+  // Parcels grouped by their job.
+  const byManifest = useMemo(() => {
+    const m = new Map<string, JobParcel[]>()
+    for (const p of parcels) {
+      if (!p.manifest_id) continue
+      const arr = m.get(p.manifest_id)
+      if (arr) arr.push(p)
+      else m.set(p.manifest_id, [p])
+    }
+    return m
+  }, [parcels])
+
+  const routes = useMemo(() => fleet?.routes ?? [], [fleet])
+  const driverName = useCallback(
+    (id: string | null) => fleet?.drivers.find((d) => d.id === id)?.name ?? id ?? '—',
+    [fleet],
+  )
+  const routeName = useCallback((id: string | null) => routes.find((r) => r.id === id)?.name ?? null, [routes])
+
+  // Bulk allocate the picked parcels (optimistic, then persist).
+  const assignParcels = useCallback(
+    async (ids: string[], routeId: string | null) => {
+      setParcels((prev) => prev.map((p) => (ids.includes(p.id) ? { ...p, route_id: routeId } : p)))
+      const { error } = await supabase.from('parcels').update({ route_id: routeId }).in('id', ids)
+      if (error) {
+        setError(error.message)
+        void load()
+      }
+    },
+    [load],
+  )
 
   return (
     <div className="min-h-dvh sm:px-8 sm:py-8">
@@ -102,7 +139,15 @@ export function JobsScreen() {
 
           <ImportCard onImported={() => void load()} />
 
-          <JobsList manifests={manifests} counts={counts} onError={setError} />
+          <JobsList
+            manifests={manifests}
+            byManifest={byManifest}
+            routes={routes}
+            driverName={driverName}
+            routeName={routeName}
+            onAssign={(ids, routeId) => void assignParcels(ids, routeId)}
+            onError={setError}
+          />
         </div>
       </div>
     </div>
@@ -188,7 +233,6 @@ function ImportCard({ onImported }: { onImported: () => void }) {
       </div>
 
       <div className="p-4">
-        {/* hidden picker */}
         <input
           ref={fileRef}
           type="file"
@@ -237,7 +281,6 @@ function ImportCard({ onImported }: { onImported: () => void }) {
               </p>
             </div>
 
-            {/* Column mapping */}
             <p className="section-label mb-2">Map columns</p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {MANIFEST_FIELDS.map((f) => (
@@ -262,7 +305,6 @@ function ImportCard({ onImported }: { onImported: () => void }) {
               ))}
             </div>
 
-            {/* Validity + preview */}
             {result && (
               <>
                 <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
@@ -344,17 +386,25 @@ function ImportCard({ onImported }: { onImported: () => void }) {
 
 function JobsList({
   manifests,
-  counts,
+  byManifest,
+  routes,
+  driverName,
+  routeName,
+  onAssign,
   onError,
 }: {
   manifests: Manifest[] | null
-  counts: Map<string, JobCounts>
+  byManifest: Map<string, JobParcel[]>
+  routes: { id: string; name: string; driver_id: string | null }[]
+  driverName: (id: string | null) => string
+  routeName: (id: string | null) => string | null
+  onAssign: (ids: string[], routeId: string | null) => void
   onError: (msg: string | null) => void
 }) {
+  const [openId, setOpenId] = useState<string | null>(null)
   const [exporting, setExporting] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
 
-  // Fetch PODs (optionally for one job) and download the Evri tracking CSV.
   async function exportTracking(job?: Manifest) {
     setExporting(job?.id ?? 'all')
     setNote(null)
@@ -432,26 +482,46 @@ function JobsList({
 
       <div className="flex flex-col gap-2">
         {manifests?.map((job) => {
-          const c = counts.get(job.id) ?? { total: 0, delivered: 0 }
+          const stops = byManifest.get(job.id) ?? []
+          const delivered = stops.filter((p) => p.status === 'delivered').length
+          const open = openId === job.id
           return (
-            <article
-              key={job.id}
-              className="flex flex-col gap-2 rounded-2xl border border-line bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="min-w-0">
-                <div className="font-serif text-[15px] text-ink">{job.name}</div>
-                <div className="text-[12px] text-muted">
-                  {fmtDate(job.imported_at)} · {c.total} parcel{c.total === 1 ? '' : 's'} · {c.delivered} delivered
-                </div>
+            <article key={job.id} className="overflow-hidden rounded-2xl border border-line bg-white">
+              {/* Job header — click to open the parcels inside */}
+              <div className="flex items-center gap-3 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => setOpenId(open ? null : job.id)}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                >
+                  <Chevron open={open} />
+                  <span className="min-w-0">
+                    <span className="block font-serif text-[15px] text-ink">{job.name}</span>
+                    <span className="block text-[12px] text-muted">
+                      {fmtDate(job.imported_at)} · {stops.length} parcel{stops.length === 1 ? '' : 's'} · {delivered}{' '}
+                      delivered
+                    </span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={exporting != null}
+                  onClick={() => void exportTracking(job)}
+                  className="flex-none rounded-[10px] bg-navy px-3.5 py-2 font-serif text-[13px] text-white transition hover:bg-navy-600 active:translate-y-px disabled:opacity-40"
+                >
+                  {exporting === job.id ? 'Exporting…' : 'Export tracking CSV'}
+                </button>
               </div>
-              <button
-                type="button"
-                disabled={exporting != null}
-                onClick={() => void exportTracking(job)}
-                className="flex-none rounded-[10px] bg-navy px-3.5 py-2 font-serif text-[13px] text-white transition hover:bg-navy-600 active:translate-y-px disabled:opacity-40"
-              >
-                {exporting === job.id ? 'Exporting…' : 'Export tracking CSV'}
-              </button>
+
+              {open && (
+                <JobParcels
+                  parcels={stops}
+                  routes={routes}
+                  driverName={driverName}
+                  routeName={routeName}
+                  onAssign={onAssign}
+                />
+              )}
             </article>
           )
         })}
@@ -460,10 +530,144 @@ function JobsList({
   )
 }
 
+/** The expanded parcels of one job: pick parcels, then assign the selection to
+ *  a route (each route is run by one driver). */
+function JobParcels({
+  parcels,
+  routes,
+  driverName,
+  routeName,
+  onAssign,
+}: {
+  parcels: JobParcel[]
+  routes: { id: string; name: string; driver_id: string | null }[]
+  driverName: (id: string | null) => string
+  routeName: (id: string | null) => string | null
+  onAssign: (ids: string[], routeId: string | null) => void
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  // Parcels can disappear/refresh under us (realtime) — keep the selection valid.
+  const validIds = useMemo(() => new Set(parcels.map((p) => p.id)), [parcels])
+  const picked = useMemo(() => [...selected].filter((id) => validIds.has(id)), [selected, validIds])
+
+  const allOn = parcels.length > 0 && picked.length === parcels.length
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function toggleAll() {
+    setSelected(allOn ? new Set() : new Set(parcels.map((p) => p.id)))
+  }
+
+  function assign(value: string) {
+    if (!picked.length || !value) return
+    onAssign(picked, value === '__none__' ? null : value)
+    setSelected(new Set())
+  }
+
+  if (parcels.length === 0) {
+    return <div className="border-t border-line px-4 py-3 text-[12.5px] text-muted">No parcels on this job.</div>
+  }
+
+  return (
+    <div className="border-t border-line">
+      {/* Select-all + bulk assign bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-paper/50 px-4 py-2">
+        <label className="flex items-center gap-2 text-[12.5px] font-semibold text-ink">
+          <input type="checkbox" checked={allOn} onChange={toggleAll} className="h-4 w-4 accent-navy" />
+          {picked.length > 0 ? `${picked.length} selected` : 'Select all'}
+        </label>
+        <div className="flex items-center gap-2">
+          <select
+            value=""
+            disabled={picked.length === 0}
+            onChange={(e) => assign(e.target.value)}
+            aria-label="Assign selected parcels to a route"
+            className="rounded-[9px] border border-line bg-white px-2.5 py-1.5 text-[12.5px] text-ink focus:border-navy-500 focus:outline-none disabled:opacity-40"
+          >
+            <option value="">Assign selected to…</option>
+            {routes.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name} · {driverName(r.driver_id)}
+              </option>
+            ))}
+            <option value="__none__">— Unallocate —</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Parcel rows */}
+      <div className="flex flex-col">
+        {parcels.map((p) => {
+          const on = picked.includes(p.id)
+          const rName = routeName(p.route_id)
+          return (
+            <label
+              key={p.id}
+              className={`flex cursor-pointer items-center gap-3 border-t border-line px-4 py-2.5 transition ${
+                on ? 'bg-navy-500/5' : 'hover:bg-paper/50'
+              }`}
+            >
+              <input type="checkbox" checked={on} onChange={() => toggle(p.id)} className="h-4 w-4 flex-none accent-navy" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[13.5px] font-semibold text-ink">{p.recipient_name}</span>
+                  <span className="flex-none rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] text-gold">
+                    {p.area}
+                  </span>
+                </div>
+                <div className="truncate text-[12px] text-muted">
+                  {p.address_line}
+                  {p.postcode ? `, ${p.postcode}` : ''}
+                </div>
+                <div className="font-mono text-[11px] tracking-[0.5px] text-navy-500">{p.tracking_number}</div>
+              </div>
+              <div className="flex-none text-right">
+                {rName ? (
+                  <span className="text-[11.5px] font-semibold text-navy-500">{rName}</span>
+                ) : (
+                  <span className="text-[11px] font-bold uppercase tracking-[0.6px] text-muted">Unallocated</span>
+                )}
+                <div className="text-[11px] text-muted">{statusLabel(p.status)}</div>
+              </div>
+            </label>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function statusLabel(status: string): string {
+  if (status === 'delivered') return '✓ delivered'
+  if (status === 'returned') return 'returned'
+  if (status === 'failed') return 'failed'
+  return 'pending'
+}
+
 function fmtDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={`h-4 w-4 flex-none stroke-navy-500 transition-transform ${open ? 'rotate-90' : ''}`}
+      fill="none"
+      strokeWidth="2.2"
+      aria-hidden
+    >
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+  )
 }
 
 function UploadGlyph() {

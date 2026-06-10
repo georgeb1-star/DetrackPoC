@@ -65,6 +65,9 @@ export interface Parcel {
   /** Failed delivery attempts so far (see MAX_DELIVERY_ATTEMPTS) */
   attempts: number
   last_failure: string | null
+  /** When the stop went terminal (delivered/returned). null while pending.
+   *  Drives the run sheet's "completed today only" rule. */
+  completed_at: string | null
   /** Route this parcel is allocated to. null = unallocated (dispatcher to-do). */
   route_id: string | null
   /** Manifest/job this parcel was imported on. null = seeded/manual. */

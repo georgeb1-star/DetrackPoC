@@ -55,6 +55,9 @@ create table parcels (
   due_date        date not null default current_date,
   attempts        int not null default 0,    -- failed delivery attempts so far
   last_failure    text,                      -- reason of the most recent failed attempt
+  -- Set when the stop goes terminal (delivered/returned); the run sheet shows
+  -- only stops completed today and lets older ones drop off (kept in the table).
+  completed_at    timestamptz,
   -- Allocation link. null = unallocated: in the dispatcher's to-do list,
   -- hidden from every driver's run until assigned.
   route_id        uuid references routes(id),
