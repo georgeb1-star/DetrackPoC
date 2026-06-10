@@ -468,7 +468,7 @@ function JobsList({
     const { data, error } = await supabase
       .from('pod_records')
       .select(
-        'tracking_scanned,status,failure_reason,received_by,captured_at,location, parcel:parcels(tracking_number,area,postcode,manifest_id)',
+        'tracking_scanned,status,failure_reason,received_by,captured_at,location, parcel:parcels(tracking_number,area,postcode,manifest_id), site:sites(name,postcode)',
       )
       .order('captured_at', { ascending: true })
     if (error) {
@@ -484,6 +484,7 @@ function JobsList({
       captured_at: string
       location: unknown
       parcel: { tracking_number: string; area: string | null; postcode: string | null; manifest_id: string | null } | null
+      site: { name: string; postcode: string | null } | null
     }
     const pods: TrackingPod[] = (data as unknown as Row[])
       .filter((r) => !job || r.parcel?.manifest_id === job.id)
@@ -497,6 +498,8 @@ function JobsList({
         location: r.location,
         area: r.parcel?.area ?? null,
         postcode: r.parcel?.postcode ?? null,
+        siteName: r.site?.name ?? null,
+        sitePostcode: r.site?.postcode ?? null,
       }))
 
     if (pods.length === 0) {

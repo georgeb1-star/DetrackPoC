@@ -6,6 +6,8 @@ import type { Parcel, PodPhoto, PodRecord } from '../lib/types'
 
 interface JoinedPod extends PodRecord {
   parcel: Parcel | null
+  /** Set when the capture was against a site (store/depot) instead of a parcel. */
+  site: { name: string; address_line: string | null; postcode: string | null; kind: string } | null
   photos: PodPhoto[]
 }
 
@@ -22,7 +24,7 @@ export function DispatcherScreen() {
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from('pod_records')
-      .select('*, parcel:parcels(*), photos:pod_photos(*)')
+      .select('*, parcel:parcels(*), site:sites(name,address_line,postcode,kind), photos:pod_photos(*)')
       .order('created_at', { ascending: false })
     if (error) {
       setError(error.message)
@@ -204,9 +206,14 @@ function PodCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-serif text-[17px] text-ink">
-              {pod.parcel?.tracking_number ?? 'Unmatched parcel'}
+              {pod.parcel?.tracking_number ?? pod.site?.name ?? 'Unmatched'}
             </h2>
             <StatusPill failed={failed} />
+            {pod.site && (
+              <span className="rounded-full border border-navy-500/30 bg-navy-500/5 px-2.5 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.6px] text-navy-500">
+                Site{pod.site.kind === 'both' ? '' : ` · ${pod.site.kind}`}
+              </span>
+            )}
             {pod.dest_distance_m != null && pod.dest_distance_m > 250 && (
               <span className="rounded-full border border-fail/40 bg-fail/10 px-2.5 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.6px] text-fail">
                 {fmtDistance(pod.dest_distance_m)} from address
@@ -239,6 +246,19 @@ function PodCard({
                 · {pod.parcel.address_line}
                 {pod.parcel.postcode ? `, ${pod.parcel.postcode}` : ''} · {pod.parcel.area}
               </span>
+            </div>
+          )}
+
+          {!pod.parcel && pod.site && (
+            <div className="mt-1 text-[13.5px] leading-snug">
+              <span className="font-semibold">{pod.site.name}</span>
+              {(pod.site.address_line || pod.site.postcode) && (
+                <span className="text-muted">
+                  {' '}
+                  · {pod.site.address_line ?? ''}
+                  {pod.site.postcode ? `, ${pod.site.postcode}` : ''}
+                </span>
+              )}
             </div>
           )}
 

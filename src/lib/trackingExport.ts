@@ -18,6 +18,10 @@ export interface TrackingPod {
   location: unknown
   area: string | null
   postcode: string | null
+  /** Set for a capture against a site (store/depot) with no parcel — used for
+   *  the Location column and so the row isn't anonymous. */
+  siteName?: string | null
+  sitePostcode?: string | null
 }
 
 /** Outcome → carrier event. Placeholder Evri-style codes — swap for the real
@@ -62,7 +66,7 @@ export function buildTrackingCsv(pods: TrackingPod[], provider = 'Evri'): string
     const ev = EVENT[pod.status]
     const pt = parseEwkbPoint(pod.location)
     const additionalInfo = pod.status === 'delivered' ? pod.received_by : pod.failure_reason
-    const location = pod.postcode || pod.area || ''
+    const location = pod.postcode || pod.area || pod.sitePostcode || pod.siteName || ''
     lines.push(
       [
         pod.parcel_tracking ?? pod.tracking_scanned,
