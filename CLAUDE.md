@@ -112,13 +112,21 @@ Routing:  main.tsx hash router gated by useSession (LoginScreen when signed
 - Bucket `pod-evidence`: private — signed-in read + insert only; the
   dispatcher views photos via signed URLs
 
-## Design tokens (§7) — in `tailwind.config.js`
+## Design tokens — in `tailwind.config.js`
 
-- navy `#0e1c38` / 600 `#16294d` / 500 `#1f3a66`; gold `#c9a227` /
-  soft `#e3c766`; paper `#f6f4ee`; ink `#10192e`; muted `#6b7589`;
-  ok `#2f8f5b`; fail `#c0492f`; hairline `line` = `rgba(14,28,56,.12)`
-- Georgia serif: app title, parcel ref, primary buttons. Mono: barcode lines,
-  JSON. Section labels: 11px uppercase tracked muted bold.
+- **"Freight Modern" theme (2026-06-11, user-requested — diverges from the §7
+  brief / design-reference.html).** Token NAMES kept from the original system;
+  values remapped: `navy` = graphite chrome `#0e1218` / 600 `#1a2029` /
+  **500 `#2d5bff` ultramarine** (links, tracking numbers, focus); `gold` =
+  hi-vis amber `#f5a30b` / soft `#ffce6b` (eyebrows, rollover, queued,
+  underline); `paper` `#eff2f6`; `ink` `#101620`; `muted` `#5b6573`;
+  ok `#0fa065`; fail `#e5484d`; `line` = `rgba(13,19,32,.11)`. Canvas =
+  blueprint dot-grid (index.css body). `.barcode-strip` = decorative motif.
+- Type (self-hosted @fontsource, offline-safe): **Barlow Condensed rides the
+  `font-serif` utility** (display/titles/buttons — index.css bumps it to 600);
+  Barlow = body; IBM Plex Mono = tracking numbers, JSON. Section labels: 11px
+  uppercase tracked muted bold. `#/pod-demo` (PodCaptureScreen) still carries
+  the old navy/gold palette — standalone demo, restyle separately if needed.
 - Responsive shell (`AppShell`): edge-to-edge on mobile (min-h-dvh,
   safe-area-aware top bar/badge/footer), centred ~430px elevated column on
   the navy gradient for laptop. No mockup chrome — this is the product UI.

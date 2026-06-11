@@ -27,11 +27,11 @@ export function SyncBadge() {
       {stuck > 0 && (
         <>
           <span className="text-white/25">·</span>
-          <span className="text-[#ff9d8a]">{stuck} retry</span>
+          <span className="text-[#ff918a]">{stuck} retry</span>
         </>
       )}
       <span className="text-white/25">·</span>
-      <span className="text-[#86d6a8]">{synced} synced</span>
+      <span className="text-[#6ee7a0]">{synced} synced</span>
     </button>
   )
 }

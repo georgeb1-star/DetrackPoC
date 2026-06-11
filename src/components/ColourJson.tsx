@@ -24,7 +24,7 @@ export function ColourJson({ header, value }: { header: string; value: unknown }
         {header}
       </div>
       <pre
-        className="m-0 overflow-x-auto whitespace-pre p-3.5 font-mono text-[11.5px] leading-[1.6] text-[#cdd7f0]"
+        className="m-0 overflow-x-auto whitespace-pre p-3.5 font-mono text-[11.5px] leading-[1.6] text-[#c3cbda]"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>

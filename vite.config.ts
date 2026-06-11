@@ -20,8 +20,8 @@ export default defineConfig(({ mode }) => ({
         name: 'ePOD Capture',
         short_name: 'ePOD',
         description: 'Electronic Proof of Delivery — driver evidence capture',
-        theme_color: '#0e1c38',
-        background_color: '#0e1c38',
+        theme_color: '#0e1218',
+        background_color: '#0e1218',
         display: 'standalone',
         icons: [
           { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },

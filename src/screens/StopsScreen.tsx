@@ -473,7 +473,7 @@ function ScanSheet({
                 <div className="text-[11px] text-muted">
                   {s.fix ? `${s.fix.lat.toFixed(5)}, ${s.fix.lng.toFixed(5)}${s.fix.accuracyM != null ? ` ±${s.fix.accuracyM}m` : ''}` : 'no GPS fix recorded'}
                 </div>
-                {s.warning && <div className="mt-0.5 text-[11.5px] font-semibold text-[#8a6d1a]">⚠ {s.warning}</div>}
+                {s.warning && <div className="mt-0.5 text-[11.5px] font-semibold text-[#9a6a00]">⚠ {s.warning}</div>}
               </div>
             ))}
           </div>
@@ -561,7 +561,7 @@ function dueLabel(dueDate: string): string {
 
 function BarcodeGlyph() {
   return (
-    <svg viewBox="0 0 24 16" className="h-4 w-6" fill="#e3c766" aria-hidden>
+    <svg viewBox="0 0 24 16" className="h-4 w-6" fill="#ffce6b" aria-hidden>
       <rect x="0" y="0" width="2" height="16" />
       <rect x="4" y="0" width="1" height="16" />
       <rect x="7" y="0" width="3" height="16" />

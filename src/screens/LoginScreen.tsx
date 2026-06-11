@@ -23,16 +23,32 @@ export function LoginScreen() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-navy bg-[radial-gradient(120%_120%_at_50%_-20%,#1f3a66_0%,#0e1c38_55%)] px-5 py-10">
-      <div className="w-full max-w-[380px]">
-        <div className="mb-5 flex items-baseline justify-center gap-1.5 leading-none">
-          <span className="font-serif text-[22px] tracking-[0.3px] text-white">Citipost</span>
-          <span className="text-xs font-bold uppercase tracking-[2.5px] text-gold-soft">ePOD</span>
+    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-navy bg-[radial-gradient(120%_120%_at_50%_-20%,#1d2d56_0%,#0e1218_58%)] px-5 py-10">
+      {/* Blueprint dot-grid over the bloom — quiet depth, not decoration */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.22]"
+        style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1px)', backgroundSize: '22px 22px' }}
+      />
+
+      <div className="relative w-full max-w-[380px]">
+        {/* Wordmark — road-signage condensed caps over the product's own motif */}
+        <div className="mb-6 text-center">
+          <div className="font-serif text-[40px] font-bold uppercase leading-none tracking-[2px] text-white">
+            Citipost
+          </div>
+          <div className="mx-auto mt-3 flex items-center justify-center gap-3">
+            <span className="barcode-strip h-4 w-14 text-gold" />
+            <span className="text-[10.5px] font-bold uppercase tracking-[3px] text-gold-soft">
+              Electronic proof of delivery
+            </span>
+            <span className="barcode-strip h-4 w-14 text-gold" />
+          </div>
         </div>
 
         <form
           onSubmit={onSubmit}
-          className="gold-underline relative overflow-hidden rounded-2xl border border-line bg-paper p-6 shadow-[0_30px_70px_-30px_rgba(0,0,0,.7)]"
+          className="gold-underline relative overflow-hidden rounded-2xl border border-line bg-white p-6 shadow-[0_30px_70px_-30px_rgba(0,0,0,.8)]"
         >
           <p className="text-[10.5px] font-semibold uppercase tracking-[2px] text-gold">Proof of delivery</p>
           <h1 className="mt-1 font-serif text-xl text-ink">Sign in</h1>
@@ -69,14 +85,14 @@ export function LoginScreen() {
           <button
             type="submit"
             disabled={submitting || !email || !password}
-            className="mt-5 w-full rounded-[13px] bg-navy p-[14px] font-serif text-base tracking-[0.3px] text-white transition hover:bg-navy-600 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-5 w-full rounded-[13px] bg-navy-500 p-[14px] font-serif text-[17px] uppercase tracking-[2px] text-white transition hover:bg-[#1f46e0] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
           >
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
 
         {/* Demo credentials — one tap fills the form (PoC convenience) */}
-        <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-[12px] text-[#9fb0d6]">
+        <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-[12px] text-[#8e99ac] backdrop-blur-sm">
           <span className="font-semibold text-gold-soft">Demo logins</span> — tap to fill · password{' '}
           <span className="font-mono text-white/80">citipost</span>
           <div className="mt-2 flex gap-2">

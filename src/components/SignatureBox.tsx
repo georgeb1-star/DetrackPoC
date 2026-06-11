@@ -32,7 +32,7 @@ export function SignatureBox({
     canvas.height = canvas.offsetHeight * ratio
     canvas.getContext('2d')!.scale(ratio, ratio)
 
-    const pad = new SignaturePad(canvas, { penColor: '#10192e' })
+    const pad = new SignaturePad(canvas, { penColor: '#101620' })
     padRef.current = pad
     pad.addEventListener('endStroke', () => {
       setSigned(true)

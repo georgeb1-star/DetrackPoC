@@ -45,15 +45,15 @@ export function ResultScreen({
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-5 lg:px-8 lg:py-7">
-      <div className="mb-5 flex items-center gap-[11px] rounded-[13px] border border-[#cbe6d5] bg-[#eef6f0] px-3.5 py-[13px]">
+      <div className="mb-5 flex items-center gap-[11px] rounded-[13px] border border-[#c2e9d8] bg-[#edf7f2] px-3.5 py-[13px]">
         <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-ok">
           <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] stroke-white" fill="none" strokeWidth="2.4">
             <path d="M4 12.5l5 5L20 6.5" />
           </svg>
         </span>
         <div>
-          <div className="text-[13.5px] font-bold text-[#1d6840]">{title}</div>
-          <div className="mt-px text-xs text-[#3f7a59]">{sub}</div>
+          <div className="text-[13.5px] font-bold text-[#0b7a4b]">{title}</div>
+          <div className="mt-px text-xs text-[#3b7d5f]">{sub}</div>
         </div>
       </div>
 

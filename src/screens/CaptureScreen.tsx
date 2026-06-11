@@ -288,7 +288,7 @@ export function CaptureScreen({
               {/* GPS recovered after a fix-less photo: the stamp is the truth,
                   so the only way to get the position on record is a re-shoot */}
               {usedFix === null && fix && (
-                <p className="mt-3 rounded-xl border border-gold/40 bg-gold/10 px-4 py-3 text-[13px] leading-snug text-[#8a6d1a]">
+                <p className="mt-3 rounded-xl border border-gold/40 bg-gold/10 px-4 py-3 text-[13px] leading-snug text-[#9a6a00]">
                   GPS is working now, but the photo was taken without a fix — tap{' '}
                   <span className="font-semibold">Retake</span> to stamp your position in.
                 </p>
@@ -453,7 +453,7 @@ function PhotoZone({
         const file = e.dataTransfer.files?.[0]
         if (file) onPhoto(file)
       }}
-      className={`flex aspect-[16/10] w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed bg-paper text-center transition hover:border-navy-500/60 hover:bg-[#f0eee7] active:scale-[0.995] ${
+      className={`flex aspect-[16/10] w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed bg-paper text-center transition hover:border-navy-500/60 hover:bg-[#e8ecf2] active:scale-[0.995] ${
         dragOver ? 'border-gold bg-gold/5' : 'border-navy-500/30'
       }`}
     >

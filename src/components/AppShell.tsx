@@ -20,7 +20,7 @@ export function AppShell({
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[256px_1fr]">
       {/* Desktop sidebar — persistent chrome on every screen */}
-      <aside className="sticky top-0 hidden h-dvh flex-col bg-navy px-5 py-6 text-white lg:flex">
+      <aside className="sticky top-0 hidden h-dvh flex-col bg-navy bg-[radial-gradient(140%_60%_at_50%_-10%,#1d2d56_0%,#0e1218_60%)] px-5 py-6 text-white lg:flex">
         <Brand large />
 
         <div className="mt-8">
@@ -31,7 +31,7 @@ export function AppShell({
             </span>
             <div className="leading-tight">
               <div className="text-[13.5px] font-semibold">{name}</div>
-              <div className="text-[11px] uppercase tracking-[1px] text-[#9fb0d6]">Driver</div>
+              <div className="text-[11px] uppercase tracking-[1px] text-[#8e99ac]">Driver</div>
             </div>
           </div>
         </div>
@@ -60,7 +60,7 @@ export function AppShell({
           <SyncBadge />
         </div>
         <div className="flex items-center justify-between gap-3 px-[18px] pb-2.5 text-[12px]">
-          <span className="truncate text-[#9fb0d6]">
+          <span className="truncate text-[#8e99ac]">
             <span className="text-white/90">{name}</span> · Driver
           </span>
           <button

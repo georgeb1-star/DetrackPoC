@@ -58,11 +58,11 @@ export async function stampAndCompress(
   const loc = fix ? `${fix.lat.toFixed(5)}, ${fix.lng.toFixed(5)}${acc}${srcMark}` : 'GPS unavailable'
 
   ctx.textBaseline = 'alphabetic'
-  ctx.fillStyle = '#e3c766' // gold-soft parcel ref, Georgia serif
-  ctx.font = `600 ${big}px Georgia, serif`
+  ctx.fillStyle = '#ffce6b' // amber parcel ref in the display face
+  ctx.font = `600 ${big}px 'Barlow Condensed', 'Arial Narrow', sans-serif`
   ctx.fillText(parcelRef, pad, h - stripH + big + pad * 0.4)
-  ctx.fillStyle = '#dbe2f5'
-  ctx.font = `400 ${sml}px -apple-system, sans-serif`
+  ctx.fillStyle = '#d8dfec'
+  ctx.font = `400 ${sml}px Barlow, -apple-system, sans-serif`
   ctx.fillText(fmt(takenAt), pad, h - stripH + big + sml + pad * 0.9)
   ctx.fillText(loc, pad, h - stripH + big + sml * 2 + pad * 1.2)
 

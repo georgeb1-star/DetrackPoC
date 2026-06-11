@@ -218,12 +218,16 @@ export async function uploadPod(pod: QueuedPod): Promise<string | null> {
         .update({ status: 'delivered', completed_at: completedAt })
         .eq('id', pod.parcelId)
     } else {
-      const { data: parcel } = await supabase
-        .from('parcels')
-        .select('attempts')
-        .eq('id', pod.parcelId)
-        .single()
-      const attempts = (parcel?.attempts ?? 0) + 1
+      // Attempts are DERIVED from the failed POD rows rather than
+      // incremented, so a sync retry of the same pod (idempotent upsert
+      // above) can never double-count an attempt. Counting under the
+      // driver's own RLS scope is fine — a parcel is worked by one route.
+      const { count } = await supabase
+        .from('pod_records')
+        .select('id', { count: 'exact', head: true })
+        .eq('parcel_id', pod.parcelId)
+        .eq('status', 'failed')
+      const attempts = count ?? 1 // includes the row upserted above
       const terminal = attempts >= MAX_DELIVERY_ATTEMPTS
       await supabase
         .from('parcels')

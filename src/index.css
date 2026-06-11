@@ -1,3 +1,17 @@
+/* Self-hosted fonts (bundled → precached by the PWA service worker, so the
+   typography survives offline). Barlow Condensed = display (DIN/road-signage
+   DNA), Barlow = body, IBM Plex Mono = tracking numbers & data. */
+@import '@fontsource/barlow-condensed/500.css';
+@import '@fontsource/barlow-condensed/600.css';
+@import '@fontsource/barlow-condensed/700.css';
+@import '@fontsource/barlow/400.css';
+@import '@fontsource/barlow/500.css';
+@import '@fontsource/barlow/600.css';
+@import '@fontsource/barlow/700.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -6,23 +20,58 @@
   body {
     margin: 0;
     min-height: 100vh;
-    /* Light app surface: white/paper content cards sit on a soft neutral, the
-       way a real web app looks — no device-on-a-desk gradient. */
-    background: linear-gradient(180deg, #eef0f4 0%, #e5e8ee 100%);
+    /* Cool steel canvas with a faint blueprint dot-grid — white cards float
+       on it, the way a freight-ops console should feel. */
+    background-color: #e7eaf0;
+    background-image:
+      radial-gradient(rgba(13, 19, 32, 0.07) 1px, transparent 1px),
+      linear-gradient(180deg, #eaedf2 0%, #e2e6ed 100%);
+    background-size:
+      22px 22px,
+      100% 100%;
     background-attachment: fixed;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, sans-serif;
+    font-family: theme('fontFamily.sans');
     color: theme('colors.ink');
     -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: theme('colors.gold.DEFAULT');
+    color: theme('colors.ink');
+  }
+
+  /* Slim graphite scrollbars — the admin portal lives on big monitors */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(13, 19, 32, 0.28) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(13, 19, 32, 0.28);
+    border-radius: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
   }
 }
 
 @layer components {
-  /* Section labels — ~11px, uppercase, letter-spaced, muted, bold (§7) */
-  .section-label {
-    @apply text-[11px] uppercase tracking-[1.4px] text-muted font-bold;
+  /* Display face rides the existing font-serif utility — give it the weight
+     and tracking Barlow Condensed wants so titles/buttons read like signage. */
+  .font-serif {
+    font-weight: 600;
+    letter-spacing: 0.015em;
   }
 
-  /* Gold-to-transparent gradient underline along the bottom of the top bar */
+  /* Section labels — ~11px, uppercase, letter-spaced, muted, bold (§7) */
+  .section-label {
+    @apply text-[11px] uppercase tracking-[1.6px] text-muted font-bold;
+  }
+
+  /* Hi-vis amber underline along the bottom of chrome bars */
   .gold-underline::after {
     content: '';
     position: absolute;
@@ -33,12 +82,28 @@
     background: linear-gradient(90deg, theme('colors.gold.DEFAULT'), transparent);
   }
 
-  /* JSON syntax colours (reference: keys gold, strings green, numbers orange,
+  /* Barcode strip — the product's own motif as a decorative divider.
+     Irregular vertical bars built from a single hard-stop gradient. */
+  .barcode-strip {
+    background-image: repeating-linear-gradient(
+      90deg,
+      currentColor 0 2px,
+      transparent 2px 5px,
+      currentColor 5px 6px,
+      transparent 6px 11px,
+      currentColor 11px 14px,
+      transparent 14px 17px,
+      currentColor 17px 18px,
+      transparent 18px 24px
+    );
+  }
+
+  /* JSON syntax colours (keys amber, strings green, numbers orange,
      booleans blue) — used by ColourJson */
   .key { color: theme('colors.gold.soft'); }
-  .str { color: #86d6a8; }
-  .num { color: #e3a36b; }
-  .bool { color: #7fb0f0; }
+  .str { color: #6ee7a0; }
+  .num { color: #ffa26b; }
+  .bool { color: #7da8ff; }
 
   /* Viewfinder scan line drift (BarcodeScanner) */
   .scanline {

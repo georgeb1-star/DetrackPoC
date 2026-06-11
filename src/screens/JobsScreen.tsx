@@ -492,7 +492,7 @@ function JobsList({
       </div>
 
       {note && (
-        <div className="mb-2 rounded-[11px] border border-gold/40 bg-gold/10 px-3 py-2 text-[12.5px] text-[#8a6d1a]">
+        <div className="mb-2 rounded-[11px] border border-gold/40 bg-gold/10 px-3 py-2 text-[12.5px] text-[#9a6a00]">
           {note}
         </div>
       )}

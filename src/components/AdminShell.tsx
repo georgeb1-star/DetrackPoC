@@ -35,7 +35,7 @@ export function AdminShell({
     <div className="flex min-h-dvh flex-col">
       {/* App bar */}
       <header className="sticky top-0 z-30">
-        <div className="bg-navy bg-[radial-gradient(120%_200%_at_85%_-50%,#1f3a66_0%,#0e1c38_55%)]">
+        <div className="bg-navy bg-[radial-gradient(120%_200%_at_85%_-50%,#1d2d56_0%,#0e1218_55%)]">
           <div className="mx-auto flex h-[58px] w-full max-w-[1440px] items-stretch gap-5 px-4 pt-[env(safe-area-inset-top)] sm:px-6 lg:px-10">
             <a href="#/allocate" className="flex flex-none items-center" aria-label="Citipost Dispatch home">
               <span className="flex items-baseline gap-1.5 leading-none">
@@ -57,8 +57,8 @@ export function AdminShell({
                     key={t.key}
                     href={t.href}
                     aria-current={isActive ? 'page' : undefined}
-                    className={`relative flex items-center whitespace-nowrap px-3 text-[13px] font-semibold transition ${
-                      isActive ? 'text-white' : 'text-[#9fb0d6] hover:text-white'
+                    className={`relative flex items-center whitespace-nowrap px-3 font-serif text-[15px] uppercase tracking-[1.5px] transition ${
+                      isActive ? 'text-white' : 'text-[#8e99ac] hover:text-white'
                     }`}
                   >
                     {t.label}
@@ -71,7 +71,7 @@ export function AdminShell({
             </nav>
 
             <div className="flex flex-none items-center gap-3">
-              <span className="hidden rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[1px] text-[#9fb0d6] md:inline">
+              <span className="hidden rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[1px] text-[#8e99ac] md:inline">
                 Admin
               </span>
               <button
