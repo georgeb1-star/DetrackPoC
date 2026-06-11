@@ -6,6 +6,22 @@ import type { Fix } from '../lib/types'
  *  gets a real fix or none at all. */
 export type NoFixReason = 'insecure' | 'denied' | 'unavailable' | 'timeout'
 
+/** Driver-readable explanations per reason — actionable where the user can
+ *  act (permissions, OS location services), honest where they can't. Shared
+ *  by every screen that shows GPS state (scan sheet, delivery capture). */
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+export const NO_FIX_NOTES: Record<NoFixReason, string> = {
+  insecure:
+    'Location needs a secure address — open the app at http://localhost:5190 on this machine (or an HTTPS address), not the plain-HTTP LAN URL.',
+  denied: IS_IOS
+    ? 'Location is blocked by iOS — Settings → Privacy & Security → Location Services: on, and allow your browser While Using the App. Then Retry.'
+    : 'Location is blocked for this site — click the padlock/tune icon by the address bar → Site settings → Location → Allow, then Retry.',
+  unavailable:
+    'The device returned no fix — on Windows turn on Settings → Privacy & security → Location → Location services, then Retry.',
+  timeout:
+    'Could not get a fix in time — Retry, ideally with Wi-Fi on (laptops locate via nearby networks).',
+}
+
 interface Acquired {
   fix: Fix | null
   /** set iff fix is null */

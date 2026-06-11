@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { BarcodeScanner } from '../components/BarcodeScanner'
 import { TopBar } from '../components/TopBar'
-import { useGeolocation } from '../hooks/useGeolocation'
+import { NO_FIX_NOTES, useGeolocation } from '../hooks/useGeolocation'
 import { useSyncStatus } from '../hooks/useSyncStatus'
 import { queueEvent } from '../lib/events'
 import { syncNow } from '../lib/syncWorker'
@@ -300,20 +300,6 @@ export function StopsScreen({
   )
 }
 
-/** Why a fix couldn't be acquired — actionable where the user can act.
- *  (Same model as the capture flow: real GPS or nothing, never silent.) */
-const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent)
-const NO_FIX_NOTES: Record<NonNullable<ReturnType<typeof useGeolocation>['noFixReason']>, string> = {
-  insecure:
-    'Location needs a secure address — open the app at http://localhost:5190 on this machine (or an HTTPS address), not the plain-HTTP LAN URL.',
-  denied: IS_IOS
-    ? 'Location is blocked by iOS — Settings → Privacy & Security → Location Services: on, and allow your browser While Using the App. Then Retry.'
-    : 'Location is blocked for this site — click the padlock/tune icon by the address bar → Site settings → Location → Allow, then Retry.',
-  unavailable:
-    'The device returned no fix — on Windows turn on Settings → Privacy & security → Location → Location services, then Retry.',
-  timeout: 'Could not get a fix in time — Retry, ideally with Wi-Fi on (laptops locate via nearby networks).',
-}
-
 /** One quick scan in this sheet session, for the running log. */
 interface SessionScan {
   ref: string
@@ -426,39 +412,41 @@ function ScanSheet({
 
         <BarcodeScanner onDecode={(v) => void tryMatch(v, 'scan')} />
 
-        {/* GPS state for quick scans — real-or-nothing, never silent */}
-        {mode !== 'delivered' && (
-          <div className="mt-2 rounded-[11px] border border-line bg-white px-3 py-1.5">
-            <div className="flex min-h-[30px] items-center justify-between gap-3">
-              {acquiring ? (
-                <span className="flex items-center gap-2 text-[12px] font-medium text-muted">
-                  <span className="h-3.5 w-3.5 flex-none animate-spin rounded-full border-2 border-navy/20 border-t-navy" />
-                  Acquiring GPS…
+        {/* GPS state — real-or-nothing, never silent. Shown in every mode:
+            quick scans record this fix directly; Deliver hands over to the
+            capture screen, which takes its own fresh read at the shutter. */}
+        <div className="mt-2 rounded-[11px] border border-line bg-white px-3 py-1.5">
+          <div className="flex min-h-[30px] items-center justify-between gap-3">
+            {acquiring ? (
+              <span className="flex items-center gap-2 text-[12px] font-medium text-muted">
+                <span className="h-3.5 w-3.5 flex-none animate-spin rounded-full border-2 border-navy/20 border-t-navy" />
+                Acquiring GPS…
+              </span>
+            ) : fix ? (
+              <span className="font-mono text-[12px] font-semibold tracking-[0.02em] text-ok">
+                {fix.lat.toFixed(5)}, {fix.lng.toFixed(5)}
+                {fix.accuracyM != null ? ` ±${fix.accuracyM}m` : ''}
+              </span>
+            ) : (
+              <>
+                <span className="text-[12px] font-semibold text-fail">
+                  {mode === 'delivered'
+                    ? 'No GPS fix — the delivery will record no location.'
+                    : 'No GPS fix — scans will record no location.'}
                 </span>
-              ) : fix ? (
-                <span className="font-mono text-[12px] font-semibold tracking-[0.02em] text-ok">
-                  {fix.lat.toFixed(5)}, {fix.lng.toFixed(5)}
-                  {fix.accuracyM != null ? ` ±${fix.accuracyM}m` : ''}
-                </span>
-              ) : (
-                <>
-                  <span className="text-[12px] font-semibold text-fail">
-                    No GPS fix — scans will record no location.
-                  </span>
-                  <button type="button" onClick={retry} className="flex-none text-[12px] font-bold text-navy-500 underline">
-                    Retry
-                  </button>
-                </>
-              )}
-            </div>
-            {/* WHY there's no fix — a blocked permission must never be silent */}
-            {!acquiring && !fix && noFixReason && (
-              <p className="mt-1 border-t border-line pt-1.5 text-[11.5px] leading-snug text-muted">
-                {NO_FIX_NOTES[noFixReason]}
-              </p>
+                <button type="button" onClick={retry} className="flex-none text-[12px] font-bold text-navy-500 underline">
+                  Retry
+                </button>
+              </>
             )}
           </div>
-        )}
+          {/* WHY there's no fix — a blocked permission must never be silent */}
+          {!acquiring && !fix && noFixReason && (
+            <p className="mt-1 border-t border-line pt-1.5 text-[11.5px] leading-snug text-muted">
+              {NO_FIX_NOTES[noFixReason]}
+            </p>
+          )}
+        </div>
 
         {unknown && (
           <div className="mt-2.5 rounded-[11px] border border-fail/40 bg-fail/10 px-3 py-2.5 text-[13px] text-fail">

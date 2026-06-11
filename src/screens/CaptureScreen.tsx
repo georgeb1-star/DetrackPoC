@@ -1,7 +1,7 @@
 import exifr from 'exifr'
 import { useMemo, useRef, useState } from 'react'
 import { SignatureBox, type SignatureHandle } from '../components/SignatureBox'
-import { useGeolocation } from '../hooks/useGeolocation'
+import { NO_FIX_NOTES, useGeolocation } from '../hooks/useGeolocation'
 import { useSyncStatus } from '../hooks/useSyncStatus'
 import type { QueuedPod } from '../lib/db'
 import { haversineM, parseEwkbPoint } from '../lib/geo'
@@ -14,11 +14,11 @@ const FAILURE_PRESETS = ['No access', 'Refused', 'Address not found', 'Other…'
 
 /** Proof-of-delivery capture for a specific job (§6.2), kept deliberately
  *  simple for the driver: choose an outcome, photograph the parcel, sign.
- *  GPS and the timestamp are still acquired, stamped into the photo, and
- *  stored on the record (real-or-nothing) — they're just not shown in the UI,
- *  so there's nothing extra for the driver to read or act on. Completion
- *  writes to the local queue and returns instantly; the sync worker uploads in
- *  the background. */
+ *  GPS is acquired on mount and read fresh at the shutter (real-or-nothing),
+ *  stamped into the photo and stored on the record — and the photo card shows
+ *  the live fix so a blocked permission is fixable BEFORE the shot, not a
+ *  surprise after. Completion writes to the local queue and returns
+ *  instantly; the sync worker uploads in the background. */
 export function CaptureScreen({
   parcel,
   trackingScanned,
@@ -36,9 +36,9 @@ export function CaptureScreen({
   onComplete: (pod: QueuedPod, previewUrl: string) => void
   onBack: () => void
 }) {
-  // GPS still warms up on mount and is read fresh at the shutter — it's just
-  // never surfaced in the UI now.
-  const { getFix } = useGeolocation()
+  // GPS warms up on mount (surfacing the permission prompt early) and is
+  // read fresh at the shutter; the photo card shows the live state.
+  const { fix, noFixReason, acquiring, getFix, retry } = useGeolocation()
   const { online } = useSyncStatus()
   const [labelPhoto, setLabelPhoto] = useState<StampedPhoto | null>(null)
   const [capturedAt, setCapturedAt] = useState<Date | null>(null)
@@ -230,6 +230,69 @@ export function CaptureScreen({
                   setUsedFix(undefined)
                 }}
               />
+
+              {/* GPS — the fix that will go on the record: once a photo
+                  exists, the fix burned into it (even if that's none);
+                  before that, the live reading. Real-or-nothing. */}
+              {(() => {
+                const shown = usedFix !== undefined ? usedFix : fix
+                const pending = usedFix === undefined && acquiring
+                return (
+                  <div className="mt-3 rounded-xl bg-paper px-4 py-2.5 ring-1 ring-inset ring-navy/10">
+                    <div className="flex min-h-[32px] items-center justify-between gap-3">
+                      {pending ? (
+                        <span className="flex items-center gap-2.5 text-[13px] font-medium text-muted">
+                          <span className="h-4 w-4 flex-none animate-spin rounded-full border-2 border-navy/20 border-t-navy" />
+                          Acquiring GPS…
+                        </span>
+                      ) : shown ? (
+                        <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] font-semibold text-ok">
+                          <span className="font-mono tracking-[0.02em]">
+                            {shown.lat.toFixed(5)}, {shown.lng.toFixed(5)}
+                            {shown.accuracyM != null ? ` ±${shown.accuracyM}m` : ''}
+                          </span>
+                          {labelPhoto && (
+                            <span className="rounded-full bg-ok/10 px-2.5 py-0.5 text-[11px] font-semibold text-ok">
+                              {shown.source === 'photo_exif' ? 'from the photo' : 'stamped in photo'}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <>
+                          <span className="text-[13px] font-semibold leading-snug text-fail">
+                            {usedFix === null
+                              ? 'Photo taken with no GPS — the record will hold no location.'
+                              : 'No GPS fix — the photo will record no location.'}
+                          </span>
+                          {usedFix !== null && (
+                            <button
+                              type="button"
+                              onClick={retry}
+                              className="flex-none text-[13px] font-bold text-navy-500 underline"
+                            >
+                              Retry
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {!pending && !shown && usedFix !== null && noFixReason && (
+                      <p className="mt-1 border-t border-navy/10 pt-1.5 text-[12px] leading-snug text-muted">
+                        {NO_FIX_NOTES[noFixReason]}
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
+
+              {/* GPS recovered after a fix-less photo: the stamp is the truth,
+                  so the only way to get the position on record is a re-shoot */}
+              {usedFix === null && fix && (
+                <p className="mt-3 rounded-xl border border-gold/40 bg-gold/10 px-4 py-3 text-[13px] leading-snug text-[#8a6d1a]">
+                  GPS is working now, but the photo was taken without a fix — tap{' '}
+                  <span className="font-semibold">Retake</span> to stamp your position in.
+                </p>
+              )}
             </Card>
           </div>
 
