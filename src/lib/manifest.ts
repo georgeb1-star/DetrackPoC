@@ -96,7 +96,10 @@ function toArea(value: string): Area {
 }
 
 /** Read the first sheet of an .xlsx into headers + row objects. Tolerates a
- *  leading title row by treating the first non-empty row as the header row. */
+ *  leading title/banner row: the header row is chosen by SCORE (how many
+ *  manifest fields the row's cells would auto-map, tracking number weighted
+ *  since every parcel manifest must have one), not "first non-empty" — a title
+ *  line maps nothing, so it loses to the real header below it. */
 export async function parseManifestFile(file: File): Promise<ParsedManifest> {
   const XLSX = await import('xlsx')
   const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
@@ -104,10 +107,27 @@ export async function parseManifestFile(file: File): Promise<ParsedManifest> {
   if (!ws) return { headers: [], rows: [] }
 
   const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, blankrows: false, defval: '' })
-  const headerRowIdx = aoa.findIndex((r) => r.some((c) => String(c).trim() !== ''))
+
+  let headerRowIdx = -1
+  let best = 0
+  for (let i = 0; i < Math.min(aoa.length, 10); i++) {
+    const cells = (aoa[i] as unknown[]).map((c) => String(c ?? '').trim())
+    if (!cells.some(Boolean)) continue
+    if (headerRowIdx === -1) headerRowIdx = i // fallback: first non-empty row
+    const m = autoMap(cells.filter(Boolean))
+    const score = Object.keys(m).length + (m.tracking_number ? 2 : 0)
+    if (score > best) {
+      best = score
+      headerRowIdx = i
+    }
+  }
   if (headerRowIdx === -1) return { headers: [], rows: [] }
 
-  const headers = (aoa[headerRowIdx] as unknown[]).map((h) => String(h).trim()).filter(Boolean)
+  // Positional headers: an unnamed column keeps its slot (as "Column N") so
+  // the columns after it don't shift onto the wrong header.
+  const headers = (aoa[headerRowIdx] as unknown[]).map(
+    (h, i) => String(h ?? '').trim() || `Column ${i + 1}`,
+  )
   const rows: Record<string, string>[] = []
   for (let i = headerRowIdx + 1; i < aoa.length; i++) {
     const r = aoa[i] as unknown[]
