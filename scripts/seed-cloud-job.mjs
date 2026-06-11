@@ -16,7 +16,6 @@ if (authErr) {
 const JOB_NAME = 'Lifecycle test job'
 const PARCELS = [
   ['TJOB-0001-GB', 'The Coffee Counter', '18 Bethnal Green Road, London', 'E1 6GH', 'Greater London', -0.0719, 51.5237],
-  ['TJOB-0002-GB', 'Hailey Road Trade Supplies', 'Unit 2, Hailey Road, Erith', 'DA18 4AA', 'Greater London', 0.153, 51.4965],
   ['TJOB-0003-GB', 'Brighton Beach Books', '12 Marine Parade, Brighton', 'BN2 1TL', 'South East', -0.1313, 50.8198],
   ['TJOB-0004-GB', 'Maidstone Garden Centre', 'Larkspur Close, Maidstone', 'ME14 9QT', 'South East', 0.5304, 51.281],
   ['TJOB-0005-GB', 'Deansgate Electronics', '90 Deansgate, Manchester', 'M3 2GP', 'North West', -2.2487, 53.4794],

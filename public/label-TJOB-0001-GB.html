@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Label — TJOB-0001-GB · The Coffee Counter</title>
+<!-- Demo asset: open on a second screen and scan with the driver app, or
+     Ctrl+P to print. Barcode/QR renderers + fonts from CDN (online page). -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;600;700&family=IBM+Plex+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+  /* Freight Modern tokens (matches tailwind.config.js) */
+  :root {
+    --chrome: #0e1218; --ultra: #2d5bff; --amber: #f5a30b; --amber-soft: #ffce6b;
+    --ink: #101620; --muted: #5b6573; --line: rgba(13,19,32,.14);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 16px 60px;
+    background: #e7eaf0;
+    background-image: radial-gradient(rgba(13,19,32,.07) 1px, transparent 1px);
+    background-size: 22px 22px;
+    font-family: Barlow, -apple-system, 'Segoe UI', sans-serif;
+    color: var(--ink);
+    display: flex; flex-direction: column; align-items: center; gap: 18px;
+  }
+  .intro { max-width: 560px; text-align: center; }
+  .intro h1 {
+    font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-size: 22px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.5px; margin: 0 0 6px; color: var(--chrome);
+  }
+  .intro p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+  .label {
+    width: 384px; background: #fff; border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(13,19,32,.05), 0 18px 40px -18px rgba(13,19,32,.35);
+    break-inside: avoid;
+  }
+  .head {
+    background: var(--chrome);
+    background-image: radial-gradient(120% 200% at 85% -50%, #1d2d56 0%, #0e1218 55%);
+    color: #fff; padding: 10px 14px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .brand {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 700;
+    font-size: 17px; letter-spacing: 2px; text-transform: uppercase;
+  }
+  .brand span { color: var(--amber-soft); }
+  .svc {
+    font-size: 9.5px; font-weight: 700; letter-spacing: 1.8px;
+    text-transform: uppercase; color: var(--amber-soft);
+  }
+  .underline { height: 3px; background: linear-gradient(90deg, var(--amber), transparent); }
+
+  .to { padding: 12px 14px 10px; border-bottom: 1px dashed var(--line); }
+  .k { font-size: 9.5px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: var(--muted); }
+  .who {
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 700;
+    font-size: 21px; letter-spacing: .4px; margin-top: 2px;
+  }
+  .addr { font-size: 13px; color: #38415a; margin-top: 2px; line-height: 1.5; }
+  .pc { font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 600; letter-spacing: 2px; margin-top: 4px; }
+
+  .meta {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 14px; border-bottom: 1px dashed var(--line);
+    font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .region {
+    color: var(--chrome); border: 1px solid rgba(245,163,11,.55);
+    background: rgba(245,163,11,.12); border-radius: 999px; padding: 2px 9px;
+  }
+
+  .codes { display: flex; align-items: center; gap: 12px; padding: 12px 14px 6px; }
+  .codes svg { flex: 1; max-width: 240px; }
+  .qr { flex: none; padding: 3px; border: 1px solid var(--line); border-radius: 6px; }
+  .tn {
+    text-align: center; font-family: 'IBM Plex Mono', monospace;
+    font-size: 16px; font-weight: 600; letter-spacing: 4px;
+    color: var(--ultra); padding: 2px 0 12px;
+  }
+  .ret {
+    padding: 8px 14px 10px; border-top: 1px solid var(--line);
+    font-size: 10px; color: var(--muted); display: flex; align-items: center; gap: 9px;
+  }
+  /* The product's barcode-strip motif as the return-line bullet */
+  .strip {
+    width: 34px; height: 12px; flex: none; color: var(--chrome);
+    background-image: repeating-linear-gradient(90deg,
+      currentColor 0 2px, transparent 2px 5px, currentColor 5px 6px,
+      transparent 6px 11px, currentColor 11px 14px, transparent 14px 17px,
+      currentColor 17px 18px, transparent 18px 24px);
+  }
+
+  @media print {
+    body { background: #fff; padding: 8mm; }
+    .intro { display: none; }
+    .label { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="intro">
+    <h1>Parcel label · TJOB-0001-GB</h1>
+    <p>
+      Job parcel — <b>The Coffee Counter</b>. Open the driver app →
+      <b>Scan label</b> → point the camera at the barcode or QR (scanning off a
+      screen works fine; Ctrl+P to print).
+    </p>
+  </div>
+
+  <article class="label">
+    <div class="head">
+      <div class="brand">CITI<span>POST</span></div>
+      <div class="svc">Tracked 24 · ePOD</div>
+    </div>
+    <div class="underline"></div>
+
+    <div class="to">
+      <div class="k">Deliver to</div>
+      <div class="who">The Coffee Counter</div>
+      <div class="addr">18 Bethnal Green Road, London</div>
+      <div class="pc">E1 6GH</div>
+    </div>
+
+    <div class="meta">
+      <span class="region">Greater London</span>
+      <span>1 of 1 · 1.1 kg</span>
+    </div>
+
+    <div class="codes">
+      <svg id="bc"></svg>
+      <div class="qr" id="qr"></div>
+    </div>
+    <div class="tn">TJOB-0001-GB</div>
+
+    <div class="ret">
+      <span class="strip"></span>
+      Return if undeliverable: Citipost Hub, Unit 9 Saddlers Way, Reading RG1 1AX
+    </div>
+  </article>
+
+<script>
+  const TN = 'TJOB-0001-GB';
+  JsBarcode('#bc', TN, { format: 'CODE128', width: 2, height: 64, displayValue: false, margin: 0 });
+  new QRCode(document.getElementById('qr'), { text: TN, width: 84, height: 84, correctLevel: QRCode.CorrectLevel.M });
+</script>
+</body>
+</html>

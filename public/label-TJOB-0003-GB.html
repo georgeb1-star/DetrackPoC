@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Label — TJOB-0002-GB · Hailey Road Trade Supplies</title>
+<title>Label — TJOB-0003-GB · Brighton Beach Books</title>
 <!-- Demo asset: open on a second screen and scan with the driver app, or
      Ctrl+P to print. Barcode/QR renderers + fonts from CDN (online page). -->
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
@@ -107,9 +107,9 @@
 </head>
 <body>
   <div class="intro">
-    <h1>Parcel label · TJOB-0002-GB</h1>
+    <h1>Parcel label · TJOB-0003-GB</h1>
     <p>
-      Job parcel — <b>Hailey Road Trade Supplies</b>. Open the driver app →
+      Job parcel — <b>Brighton Beach Books</b>. Open the driver app →
       <b>Scan label</b> → point the camera at the barcode or QR (scanning off a
       screen works fine; Ctrl+P to print).
     </p>
@@ -124,21 +124,22 @@
 
     <div class="to">
       <div class="k">Deliver to</div>
-      <div class="who">Hailey Road Trade Supplies</div>
-      <div class="addr">Unit 2, Hailey Road, Erith</div>
-      <div class="pc">DA18 4AA</div>
+      <div class="who">Brighton Beach Books</div>
+      <div class="addr">12 Marine Parade, Brighton</div>
+      <div class="pc">BN2 1TL</div>
     </div>
 
     <div class="meta">
-      <span class="region">Greater London</span>
-      <span>1 of 1 · 2.4 kg</span>
+      <span class="region">South East</span>
+      <span>1 of 1 · 1.8 kg</span>
     </div>
 
     <div class="codes">
       <svg id="bc"></svg>
       <div class="qr" id="qr"></div>
     </div>
-    <div class="tn">TJOB-0002-GB</div>
+
+    <div class="tn">TJOB-0003-GB</div>
 
     <div class="ret">
       <span class="strip"></span>
@@ -147,7 +148,7 @@
   </article>
 
 <script>
-  const TN = 'TJOB-0002-GB';
+  const TN = 'TJOB-0003-GB';
   JsBarcode('#bc', TN, { format: 'CODE128', width: 2, height: 64, displayValue: false, margin: 0 });
   new QRCode(document.getElementById('qr'), { text: TN, width: 84, height: 84, correctLevel: QRCode.CorrectLevel.M });
 </script>
