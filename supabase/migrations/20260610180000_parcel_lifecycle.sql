@@ -57,8 +57,11 @@ end $$;
 -- 2. parcels.status becomes the lifecycle. Existing rows: 'pending' (and any
 --    legacy 'failed') map to awaiting_collection — nothing has been scanned
 --    yet under the new model; delivered/returned stay terminal.
+--    Order matters on a live database: drop the OLD check before remapping
+--    rows to values it doesn't allow (a fresh `db reset` never notices — the
+--    seed runs after migrations — but a populated cloud DB does).
+alter table parcels drop constraint if exists parcels_status_check;
 alter table parcels alter column status set default 'awaiting_collection';
 update parcels set status = 'awaiting_collection' where status in ('pending','failed');
-alter table parcels drop constraint if exists parcels_status_check;
 alter table parcels add constraint parcels_status_check
   check (status in ('awaiting_collection','collected','at_warehouse','delivered','returned'));

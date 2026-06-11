@@ -42,8 +42,10 @@ exception
   when undefined_object then null;
 end $$;
 
+-- Order matters on a live database: the OLD check constraint must go before
+-- rows are remapped to the new lifecycle values.
+alter table parcels drop constraint if exists parcels_status_check;
 alter table parcels alter column status set default 'awaiting_collection';
 update parcels set status = 'awaiting_collection' where status in ('pending','failed');
-alter table parcels drop constraint if exists parcels_status_check;
 alter table parcels add constraint parcels_status_check
   check (status in ('awaiting_collection','collected','at_warehouse','delivered','returned'));
