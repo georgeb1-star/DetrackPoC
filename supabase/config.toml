@@ -371,6 +371,11 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+[functions.admin]
+# Privileged Login/Profile management. The platform verifies a valid JWT is
+# present; the function itself then checks the caller's profile role is 'admin'.
+verify_jwt = true
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

@@ -6,6 +6,7 @@ import App from './App.tsx'
 import { signOut, useSession } from './hooks/useSession.ts'
 import { supabaseConfigured } from './lib/supabase.ts'
 import { startSyncTriggers } from './lib/syncWorker.ts'
+import { AdminScreen } from './screens/AdminScreen.tsx'
 import { AllocateScreen } from './screens/AllocateScreen.tsx'
 import { DispatcherScreen } from './screens/DispatcherScreen.tsx'
 import { JobsScreen } from './screens/JobsScreen.tsx'
@@ -45,7 +46,7 @@ function Root() {
   const isAdmin = profile?.role === 'admin'
   // A driver who deep-links to a dispatcher route gets bounced to their run.
   useEffect(() => {
-    if (profile && !isAdmin && ['#/dispatch', '#/allocate', '#/jobs', '#/sites'].includes(hash)) {
+    if (profile && !isAdmin && ['#/dispatch', '#/allocate', '#/jobs', '#/sites', '#/admin'].includes(hash)) {
       window.location.hash = ''
     }
   }, [profile, isAdmin, hash])
@@ -58,7 +59,17 @@ function Root() {
   let screen
   if (isAdmin) {
     screen =
-      hash === '#/dispatch' ? <DispatcherScreen /> : hash === '#/jobs' ? <JobsScreen /> : hash === '#/sites' ? <SitesScreen /> : <AllocateScreen />
+      hash === '#/dispatch' ? (
+        <DispatcherScreen />
+      ) : hash === '#/jobs' ? (
+        <JobsScreen />
+      ) : hash === '#/sites' ? (
+        <SitesScreen />
+      ) : hash === '#/admin' ? (
+        <AdminScreen />
+      ) : (
+        <AllocateScreen />
+      )
   } else {
     screen = <App profile={profile} />
   }

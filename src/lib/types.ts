@@ -3,6 +3,10 @@
 /** Delivery region in England — also the name of the route that runs it. */
 export type Area = 'Greater London' | 'South East' | 'North West'
 
+/** The fixed set of regions (matches the parcels.area CHECK constraint). The
+ *  dispatcher's route-area editor and auto-allocation draw from exactly these. */
+export const AREAS: Area[] = ['Greater London', 'South East', 'North West']
+
 /** Parcel lifecycle position. Each step forward is a SCAN EVENT (timestamp +
  *  GPS + driver): a quick scan for collection/warehouse, the full POD capture
  *  for delivery. 'returned' is the failed-attempts terminal. */
