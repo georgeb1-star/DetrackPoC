@@ -1,11 +1,19 @@
 // Row shapes mirroring the §4 schema (hand-written — a PoC doesn't need codegen).
 
-/** Delivery region in England — also the name of the route that runs it. */
-export type Area = 'Greater London' | 'South East' | 'North West'
+/** Delivery area — the label a route covers and a parcel is tagged with. */
+export type Area =
+  | 'South London'
+  | 'North London'
+  | 'West London'
+  | 'Central London'
+  | 'Kent'
+  | 'Surrey'
 
-/** The fixed set of regions (matches the parcels.area CHECK constraint). The
- *  dispatcher's route-area editor and auto-allocation draw from exactly these. */
-export const AREAS: Area[] = ['Greater London', 'South East', 'North West']
+/** The fixed set of areas (matches the parcels.area CHECK constraint). The
+ *  dispatcher's route-area editor and auto-allocation draw from exactly these.
+ *  'South London' is the default a parcel takes and the manifest-import
+ *  fallback (see manifest.ts) — keep it first / present. */
+export const AREAS: Area[] = ['South London', 'North London', 'West London', 'Central London', 'Kent', 'Surrey']
 
 /** Parcel lifecycle position. Each step forward is a SCAN EVENT (timestamp +
  *  GPS + driver): a quick scan for collection/warehouse, the full POD capture

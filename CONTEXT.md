@@ -48,9 +48,13 @@ The word "driver" is overloaded in casual speech. In this system it splits into
   an assigned Roster entry (`driver_id`), and a set of **Areas** it covers.
   Assigning a parcel to a Route implicitly assigns it to that Roster entry.
 
-- **Area / Region** — a fixed England delivery region: exactly
-  `Greater London`, `South East`, `North West` (DB CHECK-constrained). A Route's
-  Areas drive the dispatcher's "auto-allocate by area".
+- **Area** — a fixed delivery-area label: exactly `South London`,
+  `North London`, `West London`, `Central London`, `Kent`, `Surrey`. Flat
+  labels, not nested (`Central London` is not "inside" any other). A parcel
+  carries one (`parcels.area`, DB CHECK-constrained, default `South London`); a
+  Route covers a set (`routes.areas`). A Route's Areas drive the dispatcher's
+  "auto-allocate by area", which matches a parcel's area against the labels a
+  Route lists.
 
 - **Allocation** — linking a Parcel (or Site) to a Route (`route_id`). `null` =
   unallocated (dispatcher to-do; hidden from every driver's run).

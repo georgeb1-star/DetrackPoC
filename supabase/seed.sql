@@ -7,12 +7,13 @@
 -- below, then a driver's profile is pointed at their driver id.
 --
 -- Add a real fleet (driver id is free text; routes.areas drives auto-allocation
--- by parcel area — one of 'Greater London', 'South East', 'North West'):
+-- by parcel area — one of 'South London', 'North London', 'West London',
+-- 'Central London', 'Kent', 'Surrey'):
 --
 --   insert into drivers (id, name) values ('drv_acme', 'Driver Name');
 --
 --   insert into routes (name, driver_id, areas)
---     values ('London run', 'drv_acme', array['Greater London']);
+--     values ('London run', 'drv_acme', array['South London']);
 --
 --   -- map a signed-in driver account to that driver:
 --   update profiles set driver_id = 'drv_acme'

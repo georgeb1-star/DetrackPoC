@@ -54,8 +54,8 @@ create table if not exists parcels (
   address_line    text not null,
   postcode        text,
   destination     geography(point, 4326),    -- where it *should* go (geofence)
-  area            text default 'Greater London'
-                  check (area in ('Greater London','South East','North West')),
+  area            text default 'South London'
+                  check (area in ('South London','North London','West London','Central London','Kent','Surrey')),
   status          text default 'awaiting_collection'
                   check (status in ('awaiting_collection','collected','at_warehouse','delivered','returned')),
   -- The run this parcel belongs to. Not terminal AND due_date < today =

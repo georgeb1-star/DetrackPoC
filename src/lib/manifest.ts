@@ -1,4 +1,4 @@
-import type { Area } from './types'
+import { AREAS, type Area } from './types'
 
 /** Manifest import (job intake). A parcel manifest is a spreadsheet where each
  *  row is one parcel and carries its own tracking number. We don't know the
@@ -7,10 +7,8 @@ import type { Area } from './types'
  *  committing. SheetJS is dynamically imported so it stays out of the main
  *  chunk (it's only needed on the dispatcher's import screen). */
 
-const AREAS: Area[] = ['Greater London', 'South East', 'North West']
-
 /** Parcel fields a manifest can populate. tracking/recipient/address are
- *  required; postcode/area are optional (area defaults to Greater London). */
+ *  required; postcode/area are optional (area defaults to South London). */
 export type ManifestField =
   | 'tracking_number'
   | 'recipient_name'
@@ -92,7 +90,7 @@ export function autoMap(headers: string[]): ColumnMapping {
 
 function toArea(value: string): Area {
   const found = AREAS.find((a) => a.toLowerCase() === value.trim().toLowerCase())
-  return found ?? 'Greater London'
+  return found ?? 'South London'
 }
 
 /** Read the first sheet of an .xlsx into headers + row objects. Tolerates a
