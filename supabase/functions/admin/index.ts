@@ -26,9 +26,30 @@ const json = (body: unknown, status = 200) =>
 const BAN_FOREVER = '876000h' // ~100 years — Supabase has no permanent-ban flag
 type Role = 'admin' | 'driver'
 
+// Username sign-in: a driver username is stored as a synthetic auth email
+// `<username>@<domain>`. KEEP THIS DOMAIN + THESE HELPERS IN SYNC with their
+// copies in src/lib/admin.ts (Deno can't import from src/). See docs/adr/0003.
+const DRIVER_EMAIL_DOMAIN = 'drivers.citipost.local'
+const normalizeUsername = (raw: string) => raw.toLowerCase().replace(/[^a-z0-9]/g, '')
+const usernameToEmail = (username: string) => `${normalizeUsername(username)}@${DRIVER_EMAIL_DOMAIN}`
+const emailToUsername = (email: string | null | undefined): string | null => {
+  if (!email) return null
+  const suffix = `@${DRIVER_EMAIL_DOMAIN}`
+  return email.toLowerCase().endsWith(suffix) ? email.slice(0, -suffix.length) : null
+}
+
+/** Turn GoTrue's "email already registered" into a username-aware message. */
+const dupMessage = (message: string, username: string): string =>
+  /already/i.test(message)
+    ? username
+      ? `Username “${username}” is already taken — choose another.`
+      : 'That email is already registered.'
+    : message
+
 interface AdminUser {
   id: string
   email: string | null
+  username: string | null
   full_name: string | null
   role: Role | null
   driver_id: string | null
@@ -111,6 +132,7 @@ async function listUsers(admin: SupabaseClient): Promise<AdminUser[]> {
       return {
         id: u.id,
         email: u.email ?? null,
+        username: emailToUsername(u.email),
         full_name: p?.full_name ?? null,
         role: (p?.role as Role) ?? null,
         driver_id: p?.driver_id ?? null,
@@ -119,7 +141,8 @@ async function listUsers(admin: SupabaseClient): Promise<AdminUser[]> {
         created_at: u.created_at,
       }
     })
-    .sort((a, b) => (a.email ?? '').localeCompare(b.email ?? ''))
+    // Sort by the visible handle (username for drivers, email for admins).
+    .sort((a, b) => (a.username ?? a.email ?? '').localeCompare(b.username ?? b.email ?? ''))
 }
 
 /** auth.users ids of admins who can actually sign in (role=admin AND not banned).
@@ -130,13 +153,19 @@ async function activeAdminIds(admin: SupabaseClient): Promise<Set<string>> {
 }
 
 async function createUser(admin: SupabaseClient, body: Record<string, unknown>) {
-  const email = String(body.email ?? '').trim().toLowerCase()
+  // Drivers sign up with a username (→ synthetic email); admins with a real
+  // email. The caller sends whichever fits the role.
+  const hasUsername = !!(body.username && String(body.username).trim())
+  const username = hasUsername ? normalizeUsername(String(body.username)) : ''
+  const rawEmail = String(body.email ?? '').trim().toLowerCase()
+  const email = hasUsername ? usernameToEmail(username) : rawEmail
   const password = String(body.password ?? '')
   const role = body.role as Role
   const fullName = body.full_name ? String(body.full_name).trim() : null
   const driverId = body.driver_id ? String(body.driver_id) : null
 
-  if (!email) return json({ error: 'Email is required' }, 400)
+  if (hasUsername && !username) return json({ error: 'That username has no letters or digits' }, 400)
+  if (!email || email.startsWith('@')) return json({ error: 'A username or email is required' }, 400)
   if (password.length < 6) return json({ error: 'Password must be at least 6 characters' }, 400)
   if (role !== 'admin' && role !== 'driver') return json({ error: 'Role must be admin or driver' }, 400)
   if (role === 'driver' && !driverId) return json({ error: 'A driver login must be linked to a roster driver' }, 400)
@@ -146,7 +175,7 @@ async function createUser(admin: SupabaseClient, body: Record<string, unknown>) 
     password,
     email_confirm: true, // no SMTP on this project — see docs/adr/0002
   })
-  if (error) return json({ error: error.message }, 400)
+  if (error) return json({ error: dupMessage(error.message, username) }, 400)
 
   const { error: pErr } = await admin
     .from('profiles')
@@ -206,6 +235,18 @@ async function updateUser(admin: SupabaseClient, body: Record<string, unknown>, 
         { onConflict: 'id' },
       )
     if (error) return json({ error: error.message }, 400)
+  }
+
+  // Username change (drivers): rewrite the synthetic auth email. email_confirm
+  // keeps it confirmed without trying to send a (nonexistent) SMTP mail.
+  if (body.username !== undefined) {
+    const username = normalizeUsername(String(body.username ?? ''))
+    if (!username) return json({ error: 'Username can’t be empty' }, 400)
+    const { error } = await admin.auth.admin.updateUserById(id, {
+      email: usernameToEmail(username),
+      email_confirm: true,
+    })
+    if (error) return json({ error: dupMessage(error.message, username) }, 400)
   }
 
   // Password reset (separate from profile fields).

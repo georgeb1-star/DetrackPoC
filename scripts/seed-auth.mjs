@@ -51,11 +51,15 @@ if (!SERVICE_KEY) {
 
 const PASSWORD = process.env.SEED_PASSWORD || 'localdev' // min length 6; override via SEED_PASSWORD
 
+// Drivers sign in with a username stored as a synthetic email (see ADR 0003);
+// admins use a real email. Keep this domain in sync with src/lib/admin.ts.
+const DRIVER_EMAIL_DOMAIN = 'drivers.citipost.local'
+
 // Accounts to ensure exist. driverId is null until a real fleet is provisioned
 // (see supabase/seed.sql); point a driver at their driver id afterwards.
 const ACCOUNTS = [
   { email: 'fcrawley@citipost.co.uk', role: 'admin', driverId: null, fullName: 'Finlay Crawley' },
-  { email: 'fcrawley+driver@citipost.co.uk', role: 'driver', driverId: null, fullName: 'Finlay Crawley' },
+  { username: 'fcrawley', role: 'driver', driverId: null, fullName: 'Finlay Crawley' },
 ]
 
 const supabase = createClient(URL_, SERVICE_KEY, {
@@ -73,22 +77,26 @@ const byEmail = new Map(list.users.map((u) => [u.email, u.id]))
 
 let failed = false
 for (const acc of ACCOUNTS) {
-  let userId = byEmail.get(acc.email)
+  // A driver account is identified by a username → synthetic email; an admin
+  // by a real email. `label` is the friendly handle for logs.
+  const email = acc.email ?? `${acc.username}@${DRIVER_EMAIL_DOMAIN}`
+  const label = acc.email ?? acc.username
+  let userId = byEmail.get(email)
   if (!userId) {
     const { data, error } = await supabase.auth.admin.createUser({
-      email: acc.email,
+      email,
       password: PASSWORD,
       email_confirm: true,
     })
     if (error) {
-      console.error(`✗ create ${acc.email} failed:`, error.message)
+      console.error(`✗ create ${label} failed:`, error.message)
       failed = true
       continue
     }
     userId = data.user.id
-    console.log(`✓ created ${acc.email}`)
+    console.log(`✓ created ${label}`)
   } else {
-    console.log(`· ${acc.email} already exists`)
+    console.log(`· ${label} already exists`)
   }
 
   const { error: pErr } = await supabase
@@ -105,5 +113,9 @@ for (const acc of ACCOUNTS) {
   }
 }
 
-console.log(failed ? '\nDone with errors.' : `\nAll set. Sign in with any address above · password: ${PASSWORD}`)
+console.log(
+  failed
+    ? '\nDone with errors.'
+    : `\nAll set. Sign in with the username or email above · password: ${PASSWORD}`,
+)
 process.exit(failed ? 1 : 0)

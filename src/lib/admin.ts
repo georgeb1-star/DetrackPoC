@@ -2,12 +2,56 @@ import { supabase } from './supabase'
 
 export type Role = 'admin' | 'driver'
 
+// --- Username sign-in ------------------------------------------------------
+// Supabase Auth has no "username" credential — accounts are keyed on an email.
+// So a driver username is stored as a SYNTHETIC email `<username>@<domain>`;
+// the login box and the admin function convert between the two. The domain is
+// non-routable and clearly internal, so it never collides with a real inbox.
+// Admins keep their real company email; only the synthetic domain is treated
+// as a username (see docs/adr/0003).
+//
+// IMPORTANT: these four primitives are duplicated verbatim in
+// supabase/functions/admin/index.ts (Deno can't import from src/). Keep both
+// copies — and the domain — in sync.
+export const DRIVER_EMAIL_DOMAIN = 'drivers.citipost.local'
+
+/** Lowercase + strip to [a-z0-9] — makes usernames case- and
+ *  punctuation-insensitive ("F. Crawley" and "fcrawley" collapse to the same). */
+export function normalizeUsername(raw: string): string {
+  return raw.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+/** A username → its synthetic auth email. */
+export function usernameToEmail(username: string): string {
+  return `${normalizeUsername(username)}@${DRIVER_EMAIL_DOMAIN}`
+}
+
+/** A stored auth email → the username, or null if it's a real (admin) email.
+ *  Only addresses on the synthetic domain are usernames. */
+export function emailToUsername(email: string | null | undefined): string | null {
+  if (!email) return null
+  const suffix = `@${DRIVER_EMAIL_DOMAIN}`
+  return email.toLowerCase().endsWith(suffix) ? email.slice(0, -suffix.length) : null
+}
+
+/** Suggest a username from a full name: first initial + surname, normalized.
+ *  "Finlay Crawley" → "fcrawley"; "Finlay James Crawley" → "fcrawley";
+ *  a single name falls back to the whole token. Admins can always override. */
+export function deriveUsername(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return ''
+  if (parts.length === 1) return normalizeUsername(parts[0])
+  return normalizeUsername(parts[0].slice(0, 1) + parts[parts.length - 1])
+}
+
 /** A Login (auth.users) merged with its Profile and the linked Roster entry's
  *  name — the row shape the admin panel's Users list renders. Mirrors the
  *  AdminUser shape returned by supabase/functions/admin. */
 export interface AdminUser {
   id: string
   email: string | null
+  /** the local-part for synthetic (driver) emails; null for real admin emails */
+  username: string | null
   full_name: string | null
   role: Role | null
   driver_id: string | null

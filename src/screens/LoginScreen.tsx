@@ -1,11 +1,16 @@
 import { useState, type FormEvent } from 'react'
 import { signIn } from '../hooks/useSession'
+import { usernameToEmail } from '../lib/admin'
 
 /** Sign-in portal. On success the auth listener in main.tsx swaps the app to
  *  the right surface (driver run vs dispatcher), so this screen just needs to
- *  authenticate. Branded navy backdrop + paper card. */
+ *  authenticate. Branded navy backdrop + paper card.
+ *
+ *  Drivers sign in with a username, admins with an email — one field accepts
+ *  both: anything without an "@" is treated as a username and mapped to its
+ *  synthetic email before auth (see docs/adr/0003). */
 export function LoginScreen() {
-  const [email, setEmail] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -14,9 +19,15 @@ export function LoginScreen() {
     e.preventDefault()
     setSubmitting(true)
     setError(null)
-    const { error } = await signIn(email.trim(), password)
+    const id = identifier.trim()
+    const email = id.includes('@') ? id : usernameToEmail(id)
+    const { error } = await signIn(email, password)
     if (error) {
-      setError(error.message === 'Invalid login credentials' ? 'Email or password not recognised.' : error.message)
+      setError(
+        error.message === 'Invalid login credentials'
+          ? 'Username or password not recognised.'
+          : error.message,
+      )
       setSubmitting(false)
     }
     // success: onAuthStateChange takes it from here
@@ -54,13 +65,18 @@ export function LoginScreen() {
           <h1 className="mt-1 font-serif text-xl text-ink">Sign in</h1>
           <p className="mt-1 text-[13px] text-muted">Drivers see their run; dispatch manages jobs.</p>
 
-          <label className="mt-5 block text-[11px] font-bold uppercase tracking-[1.4px] text-muted">Email</label>
+          <label className="mt-5 block text-[11px] font-bold uppercase tracking-[1.4px] text-muted">
+            Username or email
+          </label>
           <input
-            type="email"
+            type="text"
             autoComplete="username"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@citipost.co.uk"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="fcrawley"
             className={INPUT}
             required
           />
@@ -84,7 +100,7 @@ export function LoginScreen() {
 
           <button
             type="submit"
-            disabled={submitting || !email || !password}
+            disabled={submitting || !identifier || !password}
             className="mt-5 w-full rounded-[13px] bg-navy-500 p-[14px] font-serif text-[17px] uppercase tracking-[2px] text-white transition hover:bg-[#1f46e0] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
           >
             {submitting ? 'Signing in…' : 'Sign in'}

@@ -9,9 +9,19 @@ consistently. Resolved during the admin-panel design (2026-06-16).
 The word "driver" is overloaded in casual speech. In this system it splits into
 **two distinct things** that can exist independently:
 
-- **Login** — an `auth.users` account: an email + password a person signs in
-  with. Has no role or fleet meaning on its own. Created/managed only with the
-  service-role key (never from the browser).
+- **Login** — an `auth.users` account: a credential (see **Username** /
+  **Email** below) + password a person signs in with. Has no role or fleet
+  meaning on its own. Created/managed only with the service-role key (never from
+  the browser).
+
+- **Username** — how a **driver** signs in: first initial + surname, e.g.
+  `FCrawley` (case-insensitive). Drivers have no email. Admins sign in with their
+  real company **email** instead. The sign-in box accepts either.
+
+- **Synthetic email** — the implementation of a Username. Supabase Auth keys
+  accounts on an email, so a Username is stored as `<username>@<internal-domain>`
+  (a non-routable address that never reaches a real inbox). It's an internal
+  detail — users only ever see/type the Username. See ADR 0003.
 
 - **Profile** — a `profiles` row that maps one Login to a **Role** and, for
   drivers, to a **Roster entry**. This is the app's notion of *who you are*.
@@ -51,7 +61,8 @@ The word "driver" is overloaded in casual speech. In this system it splits into
 ## Admin panel verbs
 
 - **Add a user** — create a Login + Profile (Role, optional Roster link) in one
-  step. For a driver, pick an existing Roster entry or mint one inline.
+  step. A driver gets a **Username** (suggested from their name) and a Roster
+  entry (existing or minted inline); an admin gets an **email**.
 - **Assign a role / re-link a driver** — edit the Profile.
 - **Reset password** — set a new password on the Login (admin-chosen; see
   ADR 0002).
