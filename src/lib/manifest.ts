@@ -1,4 +1,4 @@
-import { AREAS, type Area } from './types'
+import { AREAS, type Area } from './types.ts'
 
 /** Manifest import (job intake). A parcel manifest is a spreadsheet where each
  *  row is one parcel and carries its own tracking number. We don't know the
@@ -182,4 +182,27 @@ export function buildParcelInputs(rows: Record<string, string>[], mapping: Colum
   })
 
   return { parcels, errors }
+}
+
+/** For a tracking-only import (a mapping with a tracking column but no address
+ *  column): pull the unique, non-blank tracking numbers to send for enrichment.
+ *  Dedupe is case-insensitive, matching buildParcelInputs' key. */
+export function splitRowsForEnrichment(
+  rows: Record<string, string>[],
+  mapping: ColumnMapping,
+): { toEnrich: string[] } {
+  const seen = new Set<string>()
+  const toEnrich: string[] = []
+  const col = mapping.tracking_number
+  if (col) {
+    for (const row of rows) {
+      const tn = (row[col] ?? '').trim()
+      if (!tn) continue
+      const key = tn.toUpperCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      toEnrich.push(tn)
+    }
+  }
+  return { toEnrich }
 }
