@@ -1,5 +1,5 @@
-import type { Area } from './types'
-import type { ParcelInput } from './manifest'
+import type { Area } from './types.ts'
+import type { ParcelInput } from './manifest.ts'
 
 /** The shipment columns the enrich-shipments Edge Function returns (a subset of
  *  Lens's public.shipments — only what we need to build a parcel). */

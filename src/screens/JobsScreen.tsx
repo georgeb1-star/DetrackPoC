@@ -474,6 +474,7 @@ function EnrichCard({ onImported }: { onImported: () => void }) {
     try {
       const res = await enrichShipments(numbers)
       const mapped = res.found.map(shipmentToParcelInput)
+      // merge=true (Retry) only ever receives the not-found set, which is disjoint from already-found — so appending can't duplicate.
       setFound((prev) => (merge && prev ? [...prev, ...mapped] : mapped))
       setNotFound(res.notFound)
     } catch (e) {

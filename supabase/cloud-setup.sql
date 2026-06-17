@@ -67,7 +67,7 @@ create table if not exists parcels (
   -- Allocation link. null = unallocated: dispatcher to-do, hidden from drivers.
   route_id        uuid references routes(id),
   manifest_id     uuid references manifests(id),
-  meta            jsonb,                     -- extra manifest columns, verbatim
+  meta            jsonb,                     -- extra manifest/shipment columns, verbatim
   created_at      timestamptz default now()
 );
 create index if not exists parcels_route_idx on parcels(route_id);
