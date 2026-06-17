@@ -30,9 +30,10 @@ Deno.serve(async (req) => {
   const url = Deno.env.get('SUPABASE_URL')!
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   const lensUrl = Deno.env.get('LENS_DB_URL')
-  if (!lensUrl) return json({ error: 'Address source not configured' }, 500)
 
-  // --- Gate: caller must be a signed-in admin (same as functions/admin) ---
+  // --- Gate: caller must be a signed-in admin (same as functions/admin). This
+  // runs BEFORE the config check below, so an unauthenticated caller can't probe
+  // whether LENS_DB_URL is set — every gate failure looks the same (401/403). ---
   const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
   const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
   if (!token) return json({ error: 'Not authenticated' }, 401)
@@ -40,6 +41,9 @@ Deno.serve(async (req) => {
   if (userErr || !userData.user) return json({ error: 'Invalid session' }, 401)
   const { data: profile } = await admin.from('profiles').select('role').eq('id', userData.user.id).maybeSingle()
   if (profile?.role !== 'admin') return json({ error: 'Admins only' }, 403)
+
+  // Config check is reachable only by an authenticated admin (gate above).
+  if (!lensUrl) return json({ error: 'Address source not configured' }, 500)
 
   // --- Parse + normalise the input list ---
   let body: { tracking_numbers?: unknown }

@@ -487,7 +487,13 @@ function EnrichCard({ onImported }: { onImported: () => void }) {
     if (!found || found.length === 0) return
     setBusy(true); setProblem(null)
     try {
-      await commitParcels(jobName.trim() || 'Tracking import', '', found)
+      // Timestamp the default name so consecutive un-named pastes each create
+      // their own job rather than merging into one shared "Tracking import"
+      // (commitParcels is create-or-update by name).
+      const defaultName = `Tracking import ${new Date().toLocaleString('en-GB', {
+        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+      })}`
+      await commitParcels(jobName.trim() || defaultName, '', found)
       setText(''); setJobName(''); setFound(null); setNotFound([])
       onImported()
     } catch (e) {

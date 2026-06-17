@@ -75,6 +75,6 @@ export function shipmentToParcelInput(row: ShipmentRow): ParcelInput {
     address_line: composeAddressLine(row),
     postcode: (row.recipient_postcode ?? '').trim() || null,
     area: deriveArea(row.recipient_postcode),
-    meta: { ...(row as unknown as Record<string, string>) },
+    meta: { ...(row as unknown as Record<string, string | null>) },
   }
 }

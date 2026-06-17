@@ -60,7 +60,9 @@ export interface ParcelInput {
   address_line: string
   postcode: string | null
   area: Area
-  meta: Record<string, string>
+  /** Raw source row, stashed verbatim into the jsonb column. Manifest rows are
+   *  all-string; enriched shipment rows carry nulls — hence string | null. */
+  meta: Record<string, string | null>
 }
 
 export interface MappedRows {
