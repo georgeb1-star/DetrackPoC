@@ -8,7 +8,7 @@ import { AREAS, type Area } from './types'
  *  chunk (it's only needed on the dispatcher's import screen). */
 
 /** Parcel fields a manifest can populate. tracking/recipient/address are
- *  required; postcode/area are optional (area defaults to South London). */
+ *  required; postcode/area are optional (area defaults to Other). */
 export type ManifestField =
   | 'tracking_number'
   | 'recipient_name'
@@ -90,7 +90,7 @@ export function autoMap(headers: string[]): ColumnMapping {
 
 function toArea(value: string): Area {
   const found = AREAS.find((a) => a.toLowerCase() === value.trim().toLowerCase())
-  return found ?? 'South London'
+  return found ?? 'Other'
 }
 
 /** Read the first sheet of an .xlsx into headers + row objects. Tolerates a

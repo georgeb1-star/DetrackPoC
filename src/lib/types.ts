@@ -8,12 +8,15 @@ export type Area =
   | 'Central London'
   | 'Kent'
   | 'Surrey'
+  | 'Other'
 
 /** The fixed set of areas (matches the parcels.area CHECK constraint). The
  *  dispatcher's route-area editor and auto-allocation draw from exactly these.
- *  'South London' is the default a parcel takes and the manifest-import
- *  fallback (see manifest.ts) — keep it first / present. */
-export const AREAS: Area[] = ['South London', 'North London', 'West London', 'Central London', 'Kent', 'Surrey']
+ *  'Other' is the fallback for parcels whose area couldn't be auto-derived
+ *  (e.g. unrecognised manifest value, or enrichment returned no match). */
+export const AREAS: Area[] = [
+  'South London', 'North London', 'West London', 'Central London', 'Kent', 'Surrey', 'Other',
+]
 
 /** Parcel lifecycle position. Each step forward is a SCAN EVENT (timestamp +
  *  GPS + driver): a quick scan for collection/warehouse, the full POD capture
