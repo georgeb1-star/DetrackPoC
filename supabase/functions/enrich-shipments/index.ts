@@ -59,6 +59,10 @@ Deno.serve(async (req) => {
   if (submitted.length > MAX_BATCH) return json({ error: `Too many at once (max ${MAX_BATCH})` }, 400)
 
   // --- Read Lens (read-only role); return raw matched rows + the misses ---
+  // epod_shipment_lookup is the ONLY object epod_reader can read: a view scoped
+  // to the 9 recipient columns AND `where is_deleted = false` (no soft-deleted
+  // PII). That row/column scoping is defined and version-controlled in
+  // supabase/lens-epod-reader.sql — change it there, never by widening this query.
   const sql = postgres(lensUrl, { prepare: false, max: 1, idle_timeout: 5 })
   try {
     const rows = await sql`
