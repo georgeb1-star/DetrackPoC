@@ -6,6 +6,7 @@ import {
   buildParcelInputs,
   MANIFEST_FIELDS,
   parseManifestFile,
+  splitRowsForEnrichment,
   type ColumnMapping,
   type ParsedManifest,
   type ParcelInput,
@@ -178,6 +179,14 @@ function ImportCard({ onImported }: { onImported: () => void }) {
     [mapping],
   )
 
+  // Tracking-only: the file has a tracking column but no address column — route
+  // through enrichment (GWOptical lookup) instead of the normal build path.
+  const trackingOnly = !!(parsed && mapping.tracking_number && !mapping.address_line)
+  const enrichCount = useMemo(
+    () => (trackingOnly && parsed ? splitRowsForEnrichment(parsed.rows, mapping).toEnrich.length : 0),
+    [trackingOnly, parsed, mapping],
+  )
+
   async function onFile(file: File) {
     setProblem(null)
     setParsing(true)
@@ -212,7 +221,7 @@ function ImportCard({ onImported }: { onImported: () => void }) {
   }
 
   async function commit() {
-    if (!result || !result.parcels.length) return
+    if (trackingOnly ? enrichCount === 0 : !result || !result.parcels.length) return
     setImporting(true)
     setProblem(null)
     try {
@@ -220,7 +229,28 @@ function ImportCard({ onImported }: { onImported: () => void }) {
       // imported_at, parcels stay attached) instead of minting a duplicate
       // job and re-homing the parcels onto it.
       const name = jobName.trim() || filename || 'Untitled job'
-      await commitParcels(name, filename, result.parcels)
+
+      // Tracking-only file: look up addresses in GWOptical, then commit found ones.
+      if (parsed && mapping.tracking_number && !mapping.address_line) {
+        const { toEnrich } = splitRowsForEnrichment(parsed.rows, mapping)
+        const res = await enrichShipments(toEnrich)
+        const enriched = res.found.map(shipmentToParcelInput)
+        if (enriched.length === 0) {
+          setProblem(`None of the ${toEnrich.length} tracking numbers were found in GWOptical yet.`)
+          setImporting(false)
+          return
+        }
+        await commitParcels(name, filename, enriched)
+        if (res.notFound.length > 0) {
+          setProblem(`Imported ${enriched.length}; ${res.notFound.length} not found in GWOptical yet: ${res.notFound.slice(0, 10).join(', ')}${res.notFound.length > 10 ? '…' : ''}`)
+        }
+        reset()
+        onImported()
+        setImporting(false)
+        return
+      }
+
+      await commitParcels(name, filename, result!.parcels)
       reset()
       onImported()
     } catch (e) {
@@ -342,15 +372,19 @@ function ImportCard({ onImported }: { onImported: () => void }) {
               </div>
             )}
 
-            {result && (
+            {(result || trackingOnly) && (
               <>
                 <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
-                  <span className="font-semibold text-ok">{result.parcels.length} parcels ready</span>
-                  {result.errors.length > 0 && (
+                  {trackingOnly ? (
+                    <span className="font-semibold text-ok">{enrichCount} tracking numbers to look up</span>
+                  ) : (
+                    <span className="font-semibold text-ok">{result!.parcels.length} parcels ready</span>
+                  )}
+                  {!trackingOnly && result && result.errors.length > 0 && (
                     <span className="font-semibold text-fail">{result.errors.length} rows skipped</span>
                   )}
                 </div>
-                {result.errors.length > 0 && (
+                {!trackingOnly && result && result.errors.length > 0 && (
                   <ul className="mt-1.5 space-y-0.5 text-[12px] text-muted">
                     {result.errors.slice(0, 4).map((e) => (
                       <li key={e.index}>
@@ -361,7 +395,7 @@ function ImportCard({ onImported }: { onImported: () => void }) {
                   </ul>
                 )}
 
-                {result.parcels.length > 0 && (
+                {!trackingOnly && result && result.parcels.length > 0 && (
                   <div className="mt-3 overflow-x-auto rounded-[11px] border border-line">
                     <table className="w-full text-left text-[12.5px]">
                       <thead className="bg-paper/60 text-[10.5px] uppercase tracking-[0.5px] text-muted">
@@ -405,11 +439,11 @@ function ImportCard({ onImported }: { onImported: () => void }) {
               </button>
               <button
                 type="button"
-                disabled={importing || !result || result.parcels.length === 0}
+                disabled={importing || (trackingOnly ? enrichCount === 0 : !result || result.parcels.length === 0)}
                 onClick={() => void commit()}
                 className="flex-1 rounded-[11px] bg-navy px-4 py-2.5 font-serif text-[15px] text-white transition hover:bg-navy-600 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {importing ? 'Importing…' : `Import ${result?.parcels.length ?? 0} parcels`}
+                {importing ? 'Importing…' : trackingOnly ? `Look up & import ${enrichCount}` : `Import ${result?.parcels.length ?? 0} parcels`}
               </button>
             </div>
           </div>
