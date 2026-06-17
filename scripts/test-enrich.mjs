@@ -43,6 +43,15 @@ check('unknown prefix → Other', deriveArea('ZZ1 1ZZ') === 'Other')
 check('East London (no home) → Other', deriveArea('E1 6AN') === 'Other')
 check('blank → Other', deriveArea('') === 'Other')
 check('null → Other', deriveArea(null) === 'Other')
+// Regression: a 2-letter area must NOT fall back to its 1-letter London
+// namesake. WA=Warrington (not London W), NE=Newcastle (not London N).
+check('WA → Other, not West London', deriveArea('WA1 1AA') === 'Other')
+check('WD → Other, not West London', deriveArea('WD17 1AA') === 'Other')
+check('NE → Other, not North London', deriveArea('NE1 1AA') === 'Other')
+check('NP → Other, not North London', deriveArea('NP10 8XG') === 'Other')
+// …while the genuine 1-letter London areas still resolve.
+check('W → West London', deriveArea('W1A 0AX') === 'West London')
+check('N → North London', deriveArea('N1 9GU') === 'North London')
 
 console.log('shipmentToParcelInput')
 const pi = shipmentToParcelInput(row)

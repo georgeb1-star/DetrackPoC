@@ -53,15 +53,17 @@ const POSTCODE_AREA: Record<string, Area> = {
 }
 
 /** Map a UK postcode to one of ePOD's areas via its outward-code letters.
- *  Unmatched / missing → 'Other'. Matches the 2-letter prefix first (WC, EC,
- *  NW, SE, …) then the 1-letter (N, W, …). */
+ *  Unmatched / missing → 'Other'. The leading letters ARE the postcode area
+ *  (1 letter like N/W, or 2 like WC/NW), so we look up that whole prefix — we
+ *  must NOT strip a 2-letter prefix down to 1, because UK postcode areas aren't
+ *  hierarchical: WA (Warrington) is not London W, NE (Newcastle) is not London
+ *  N. Falling back would mis-file out-of-region parcels into a London area
+ *  instead of flagging them as 'Other'. */
 export function deriveArea(postcode: string | null | undefined): Area {
   const pc = (postcode ?? '').trim().toUpperCase()
   if (!pc) return 'Other'
   const letters = (pc.match(/^[A-Z]{1,2}/) ?? [''])[0]
-  if (letters.length === 2 && POSTCODE_AREA[letters]) return POSTCODE_AREA[letters]
-  const one = letters.slice(0, 1)
-  return POSTCODE_AREA[letters] ?? POSTCODE_AREA[one] ?? 'Other'
+  return POSTCODE_AREA[letters] ?? 'Other'
 }
 
 /** A matched shipment row → the ParcelInput the importer/commit path expects.
