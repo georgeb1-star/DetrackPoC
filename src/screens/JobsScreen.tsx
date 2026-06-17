@@ -241,11 +241,11 @@ function ImportCard({ onImported }: { onImported: () => void }) {
           return
         }
         await commitParcels(name, filename, enriched)
+        reset()
+        onImported()
         if (res.notFound.length > 0) {
           setProblem(`Imported ${enriched.length}; ${res.notFound.length} not found in GWOptical yet: ${res.notFound.slice(0, 10).join(', ')}${res.notFound.length > 10 ? '…' : ''}`)
         }
-        reset()
-        onImported()
         setImporting(false)
         return
       }
