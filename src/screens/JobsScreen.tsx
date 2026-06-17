@@ -434,12 +434,13 @@ function EnrichCard({ onImported }: { onImported: () => void }) {
     s.split(/[\s,]+/).map((t) => t.trim()).filter(Boolean),
   ))
 
-  async function lookup(numbers: string[]) {
+  async function lookup(numbers: string[], merge = false) {
     if (numbers.length === 0) return
     setBusy(true); setProblem(null)
     try {
       const res = await enrichShipments(numbers)
-      setFound(res.found.map(shipmentToParcelInput))
+      const mapped = res.found.map(shipmentToParcelInput)
+      setFound((prev) => (merge && prev ? [...prev, ...mapped] : mapped))
       setNotFound(res.notFound)
     } catch (e) {
       setProblem(e instanceof Error ? e.message : String(e))
@@ -491,7 +492,7 @@ function EnrichCard({ onImported }: { onImported: () => void }) {
               <div className="mt-2 rounded-[11px] border border-gold/40 bg-gold/10 px-3 py-2 text-[12.5px] text-[#9a6a00]">
                 <div className="mb-1 font-semibold">Not in GWOptical yet:</div>
                 <div className="font-mono text-[11.5px] break-words">{notFound.join(', ')}</div>
-                <button type="button" disabled={busy} onClick={() => void lookup(notFound)}
+                <button type="button" disabled={busy} onClick={() => void lookup(notFound, true)}
                   className="mt-2 rounded-[9px] border border-gold/50 bg-white px-2.5 py-1 text-[12px] font-semibold text-[#9a6a00]">
                   Retry not-found
                 </button>
