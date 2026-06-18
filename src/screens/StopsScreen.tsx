@@ -53,6 +53,7 @@ export function StopsScreen({
   sites,
   onSelectSite,
   onSelect,
+  onViewReceipt,
 }: {
   parcels: Parcel[] | null
   error: string | null
@@ -64,6 +65,9 @@ export function StopsScreen({
   sites?: Site[]
   onSelectSite?: (site: Site) => void
   onSelect: (parcel: Parcel, scannedValue?: string) => void
+  /** Re-opening a finished stop shows its read-only receipt, not the capture
+   *  form — so the proof persists and a parcel can't be delivered twice. */
+  onViewReceipt: (parcel: Parcel) => void
 }) {
   const [sheetOpen, setSheetOpen] = useState(false)
   // Offline, the server still shows the old stage — overlay the local queue so
@@ -227,7 +231,7 @@ export function StopsScreen({
                   <StopRow
                     key={p.id}
                     parcel={p}
-                    onSelect={onSelect}
+                    onSelect={onViewReceipt}
                     dim
                     note={p.status === 'returned' ? `Return to sender — ${p.attempts} failed attempts` : undefined}
                   >
@@ -293,7 +297,12 @@ export function StopsScreen({
           onClose={() => setSheetOpen(false)}
           onMatch={(parcel, value) => {
             setSheetOpen(false)
-            onSelect(parcel, value)
+            // Re-scanning a parcel that's already done (delivered, or returned
+            // after max attempts) opens its read-only receipt — the same lock
+            // as tapping a Completed card — so a stray re-scan can never mint a
+            // second POD for it. Active/failed-but-retryable stops still capture.
+            if (isDone(parcel)) onViewReceipt(parcel)
+            else onSelect(parcel, value)
           }}
           onStageScan={recordStageScan}
         />

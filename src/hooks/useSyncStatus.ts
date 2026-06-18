@@ -96,3 +96,36 @@ export function useQueuedPod(podId: string): QueuedPod | null {
 
   return pod
 }
+
+/** The locally-held POD for a parcel, so re-opening a completed stop shows the
+ *  proof that was captured (and locks out a duplicate re-capture). `loading`
+ *  distinguishes "still reading IndexedDB" from "no local POD" (the latter
+ *  happens when the delivery was captured on another device / cleared cache).
+ *  parcelId isn't indexed, but the pods table is a single run's worth of
+ *  captures, so a full-table filter is cheap. Watches sync events so the
+ *  receipt flips queued→synced live, just like useQueuedPod. */
+export function useQueuedPodByParcel(parcelId: string): { pod: QueuedPod | null; loading: boolean } {
+  const [state, setState] = useState<{ pod: QueuedPod | null; loading: boolean }>({
+    pod: null,
+    loading: true,
+  })
+
+  useEffect(() => {
+    let live = true
+    const refresh = async () => {
+      const rows = await db.pods.filter((p) => p.parcelId === parcelId).toArray()
+      if (!live) return
+      // A delivered POD is the one to show; otherwise (a returned parcel's
+      // failed attempts) show the most recent capture.
+      const pod =
+        rows.find((p) => p.status === 'delivered') ??
+        [...rows].sort((a, b) => b.queuedAt.localeCompare(a.queuedAt))[0] ??
+        null
+      setState({ pod, loading: false })
+    }
+    void refresh()
+    return subscribeSync(() => void refresh())
+  }, [parcelId])
+
+  return state
+}

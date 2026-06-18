@@ -45,6 +45,10 @@ export function CaptureScreen({
   const [outcome, setOutcome] = useState<PodStatus>('delivered')
   const [failurePreset, setFailurePreset] = useState('')
   const [failureOther, setFailureOther] = useState('')
+  // Who took delivery — written to pod_records.received_by and shown on the
+  // dispatcher's POD. Required to confirm a delivery (a failed attempt has no
+  // recipient, so it's not collected there).
+  const [receivedBy, setReceivedBy] = useState('')
   const [signed, setSigned] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -83,13 +87,19 @@ export function CaptureScreen({
   }
 
   const failureReason = failurePreset === 'Other…' ? failureOther.trim() : failurePreset
+  const receivedByTrimmed = receivedBy.trim()
+  // A delivery needs a photo AND a recipient name; a failed attempt needs a
+  // photo AND a reason. (Photo has always been mandatory — it's the proof.)
   const canComplete =
-    !!labelPhoto && !submitting && (outcome === 'delivered' || failureReason.length > 0)
+    !!labelPhoto &&
+    !submitting &&
+    (outcome === 'delivered' ? receivedByTrimmed.length > 0 : failureReason.length > 0)
 
   const checklist =
     outcome === 'delivered'
       ? [
           { label: 'Photo evidence', done: !!labelPhoto },
+          { label: 'Received by', done: receivedByTrimmed.length > 0 },
           { label: 'Signature', done: signed, optional: true },
         ]
       : [
@@ -118,7 +128,7 @@ export function CaptureScreen({
         trackingScanned,
         status: outcome,
         failureReason: outcome === 'failed' ? failureReason : null,
-        receivedBy: '',
+        receivedBy: outcome === 'delivered' ? receivedByTrimmed : '',
         capturedAt,
         photos,
         location: gpsFix,
@@ -298,7 +308,33 @@ export function CaptureScreen({
 
           {/* Right rail — signature + completion (sticky on laptop) */}
           <div className="grid gap-5 lg:sticky lg:top-24">
-            <Card step="03" title="Signature" state={signed ? 'done' : 'optional'}>
+            <Card
+              step="03"
+              title="Sign-off"
+              state={
+                outcome === 'delivered'
+                  ? receivedByTrimmed.length > 0
+                    ? 'done'
+                    : 'required'
+                  : signed
+                    ? 'done'
+                    : 'optional'
+              }
+            >
+              {outcome === 'delivered' && (
+                <div className="mb-4">
+                  <FieldLabel>Received by (required)</FieldLabel>
+                  <input
+                    value={receivedBy}
+                    onChange={(e) => setReceivedBy(e.target.value)}
+                    placeholder="Name of person who took delivery"
+                    autoComplete="name"
+                    autoCapitalize="words"
+                    className={INPUT_CLASS}
+                  />
+                </div>
+              )}
+              <FieldLabel>Signature · optional</FieldLabel>
               <SignatureBox handleRef={sigRef} onSignedChange={setSigned} />
             </Card>
 

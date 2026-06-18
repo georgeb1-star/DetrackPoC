@@ -122,15 +122,42 @@ export async function syncNow(opts: { includeStuck?: boolean } = {}): Promise<vo
   }
 }
 
+/** Fast loop: drains fresh items quickly. It skips stuck items (no
+ *  includeStuck) so a genuinely poison record can't hammer the network every
+ *  few seconds or wedge the queue behind it. */
 const SYNC_INTERVAL_MS = 8_000
+/** Slow safety net: a periodic pass that DOES retry stuck items, so recovery
+ *  is fully automatic. A driver must never be told to tap a "sync" button —
+ *  this sweep heals a stuck capture on its own even if the app stays open. */
+const STUCK_SWEEP_MS = 120_000
 
-/** Install the §8 triggers. Called once from main.tsx. */
+/** Install the §8 triggers. Called once from main.tsx.
+ *
+ *  The recovery philosophy: stuck items must auto-heal without the driver
+ *  doing anything. Three moments make a previously-failing upload likely to
+ *  succeed — the network coming back, the app returning to the foreground
+ *  (fresh session after a mobile PWA was backgrounded), and a cold start — so
+ *  each fires a FULL pass (includeStuck) that retries even poisoned items. The
+ *  slow sweep covers the remaining case: the app left open, online, with a
+ *  stuck item that just needs another go. The manual SyncBadge tap still
+ *  exists, but it's now reassurance, not a required step. */
 export function startSyncTriggers(): void {
   // Ask the browser not to evict the queue under storage pressure — silently
   // best-effort (Chrome grants it for installed/engaged PWAs).
   void navigator.storage?.persist?.().catch(() => {})
 
-  window.addEventListener('online', () => void syncNow())
+  // Network restored → retry everything, stuck items included (a dropped
+  // connection is the most common reason a capture failed in the first place).
+  window.addEventListener('online', () => void syncNow({ includeStuck: true }))
+
+  // App brought back to the foreground → a backgrounded mobile PWA gets its
+  // timers throttled and its auth token can lapse; on return we hold a fresh
+  // session and usually signal, so flush everything including stuck items.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void syncNow({ includeStuck: true })
+  })
+
   window.setInterval(() => void syncNow(), SYNC_INTERVAL_MS)
-  void syncNow() // app load
+  window.setInterval(() => void syncNow({ includeStuck: true }), STUCK_SWEEP_MS)
+  void syncNow({ includeStuck: true }) // cold start: flush anything left stuck last session
 }

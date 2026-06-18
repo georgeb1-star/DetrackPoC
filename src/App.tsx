@@ -8,7 +8,7 @@ import type { QueuedPod } from './lib/db'
 import { subscribeSync } from './lib/syncEvents'
 import { isRollover, isTerminal, type Parcel, type Site } from './lib/types'
 import { CaptureScreen } from './screens/CaptureScreen'
-import { ResultScreen } from './screens/ResultScreen'
+import { ResultScreen, StopReceipt } from './screens/ResultScreen'
 import { SiteCaptureScreen } from './screens/SiteCaptureScreen'
 import { StopsScreen } from './screens/StopsScreen'
 
@@ -18,6 +18,8 @@ type View =
   | { name: 'capture'; parcel: Parcel; scannedValue: string }
   | { name: 'site'; site: Site }
   | { name: 'done'; pod: QueuedPod; previewUrl: string }
+  // Re-opening a finished stop: read-only proof, never the capture form.
+  | { name: 'receipt'; parcel: Parcel }
 
 export default function App({ profile }: { profile: Profile }) {
   const { parcels, error, reload } = useParcels()
@@ -87,6 +89,7 @@ export default function App({ profile }: { profile: Profile }) {
           onSelect={(parcel, scannedValue) =>
             setView({ name: 'capture', parcel, scannedValue: scannedValue ?? parcel.tracking_number })
           }
+          onViewReceipt={(parcel) => setView({ name: 'receipt', parcel })}
         />
       )}
 
@@ -96,6 +99,10 @@ export default function App({ profile }: { profile: Profile }) {
           previewUrl={view.previewUrl}
           onReset={() => setView({ name: 'stops' })}
         />
+      )}
+
+      {view.name === 'receipt' && (
+        <StopReceipt parcel={view.parcel} onReset={() => setView({ name: 'stops' })} />
       )}
     </AppShell>
   )

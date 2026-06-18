@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ColourJson } from '../components/ColourJson'
-import { useQueuedPod } from '../hooks/useSyncStatus'
+import { useQueuedPod, useQueuedPodByParcel } from '../hooks/useSyncStatus'
 import type { QueuedPod } from '../lib/db'
 import { fmtDistance } from '../lib/geo'
 import { photoPath, signaturePath } from '../lib/pod'
+import { STATUS_LABEL, type Parcel } from '../lib/types'
 
 /** Confirmation: green banner, the stamped photo, then a human-readable
  *  delivery receipt. The raw record JSON lives behind a collapsed
@@ -16,7 +17,9 @@ export function ResultScreen({
   onReset,
 }: {
   pod: QueuedPod
-  previewUrl: string
+  /** The fresh-capture object URL. Absent when re-opening a completed stop —
+   *  the proof photo is then derived from the stored label blob below. */
+  previewUrl?: string
   onReset: () => void
 }) {
   const pod = useQueuedPod(initialPod.podId) ?? initialPod
@@ -25,9 +28,29 @@ export function ResultScreen({
   const synced = pod.synced === 1
   const label = pod.photos.find((p) => p.type === 'label')
   const where = pod.photos.find((p) => p.type === 'where_left')
+  // Proof photo: the in-memory URL from a fresh capture, or — when re-opening a
+  // completed stop — one made from the stored label blob (revoked on unmount so
+  // repeated visits don't leak object URLs).
+  const derivedPhotoUrl = useMemo(
+    () => (!previewUrl && label?.blob ? URL.createObjectURL(label.blob) : null),
+    [previewUrl, label?.blob],
+  )
+  useEffect(
+    () => () => {
+      if (derivedPhotoUrl) URL.revokeObjectURL(derivedPhotoUrl)
+    },
+    [derivedPhotoUrl],
+  )
+  const photoSrc = previewUrl ?? derivedPhotoUrl
   const signatureUrl = useMemo(
     () => (pod.signature ? URL.createObjectURL(pod.signature) : null),
     [pod.signature],
+  )
+  useEffect(
+    () => () => {
+      if (signatureUrl) URL.revokeObjectURL(signatureUrl)
+    },
+    [signatureUrl],
   )
 
   const title = synced
@@ -45,15 +68,23 @@ export function ResultScreen({
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-5 lg:px-8 lg:py-7">
-      <div className="mb-5 flex items-center gap-[11px] rounded-[13px] border border-[#c2e9d8] bg-[#edf7f2] px-3.5 py-[13px]">
-        <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-ok">
+      <div
+        className={`mb-5 flex items-center gap-[11px] rounded-[13px] border px-3.5 py-[13px] ${
+          failed ? 'border-fail/30 bg-fail/[0.06]' : 'border-[#c2e9d8] bg-[#edf7f2]'
+        }`}
+      >
+        <span
+          className={`flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full ${
+            failed ? 'bg-fail' : 'bg-ok'
+          }`}
+        >
           <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] stroke-white" fill="none" strokeWidth="2.4">
-            <path d="M4 12.5l5 5L20 6.5" />
+            {failed ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 12.5l5 5L20 6.5" />}
           </svg>
         </span>
         <div>
-          <div className="text-[13.5px] font-bold text-[#0b7a4b]">{title}</div>
-          <div className="mt-px text-xs text-[#3b7d5f]">{sub}</div>
+          <div className={`text-[13.5px] font-bold ${failed ? 'text-fail' : 'text-[#0b7a4b]'}`}>{title}</div>
+          <div className={`mt-px text-xs ${failed ? 'text-fail/80' : 'text-[#3b7d5f]'}`}>{sub}</div>
         </div>
       </div>
 
@@ -61,11 +92,17 @@ export function ResultScreen({
         {/* Proof photo */}
         <div>
           <p className="section-label mb-[9px]">Proof photo</p>
-          <img
-            src={previewUrl}
-            alt="Proof of delivery photo"
-            className="block w-full rounded-[13px] border border-line"
-          />
+          {photoSrc ? (
+            <img
+              src={photoSrc}
+              alt="Proof of delivery photo"
+              className="block w-full rounded-[13px] border border-line"
+            />
+          ) : (
+            <div className="grid aspect-[16/10] w-full place-items-center rounded-[13px] border border-dashed border-line bg-paper text-[13px] text-muted">
+              Photo not available on this device
+            </div>
+          )}
         </div>
 
         {/* Receipt + actions */}
@@ -222,4 +259,88 @@ function fmtDateTime(iso: string | null): string {
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+/** Read-only receipt for a stop that's already finished. Re-opening a completed
+ *  stop routes here instead of the capture screen, so the driver sees the proof
+ *  they captured (reassurance) and CANNOT re-capture — which would otherwise
+ *  mint a second POD for the same parcel. The proof is read from the local
+ *  queue by parcel; if it isn't there (captured on another device, or cache
+ *  cleared) we show a minimal status card rather than a blank screen. */
+export function StopReceipt({ parcel, onReset }: { parcel: Parcel; onReset: () => void }) {
+  const { pod, loading } = useQueuedPodByParcel(parcel.id)
+
+  if (loading) {
+    return (
+      <div className="mx-auto flex w-full max-w-5xl items-center justify-center px-4 py-16 text-[13px] text-muted">
+        <span className="mr-2.5 h-4 w-4 animate-spin rounded-full border-2 border-navy/20 border-t-navy" />
+        Loading proof…
+      </div>
+    )
+  }
+  if (!pod) return <NoLocalProof parcel={parcel} onReset={onReset} />
+  return <ResultScreen pod={pod} onReset={onReset} />
+}
+
+/** Fallback when a completed stop has no proof on THIS device. The full
+ *  evidence still lives server-side (dispatcher portal); here we just confirm
+ *  the outcome read-only, never dropping the driver into a capture form. */
+function NoLocalProof({ parcel, onReset }: { parcel: Parcel; onReset: () => void }) {
+  const returned = parcel.status === 'returned'
+  return (
+    <div className="mx-auto w-full max-w-5xl px-4 py-5 lg:px-8 lg:py-7">
+      <div
+        className={`mb-5 flex items-center gap-[11px] rounded-[13px] border px-3.5 py-[13px] ${
+          returned ? 'border-fail/30 bg-fail/[0.06]' : 'border-[#c2e9d8] bg-[#edf7f2]'
+        }`}
+      >
+        <span
+          className={`flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full ${
+            returned ? 'bg-fail' : 'bg-ok'
+          }`}
+        >
+          <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] stroke-white" fill="none" strokeWidth="2.4">
+            {returned ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 12.5l5 5L20 6.5" />}
+          </svg>
+        </span>
+        <div>
+          <div className={`text-[13.5px] font-bold ${returned ? 'text-fail' : 'text-[#0b7a4b]'}`}>
+            {STATUS_LABEL[parcel.status]}
+          </div>
+          <div className={`mt-px text-xs ${returned ? 'text-fail/80' : 'text-[#3b7d5f]'}`}>
+            {parcel.completed_at ? `Completed ${fmtDateTime(parcel.completed_at)}` : 'This stop is finished'}
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-[13px] border border-line bg-white">
+        <Row k="Parcel">
+          <span className="font-serif text-[14px]">{parcel.tracking_number}</span>
+        </Row>
+        <Row k="Recipient">{parcel.recipient_name}</Row>
+        <Row k="Address">
+          {parcel.address_line}
+          {parcel.postcode ? `, ${parcel.postcode}` : ''}
+        </Row>
+        <Row k="Status">
+          <span className={returned ? 'font-bold text-fail' : 'font-bold text-ok'}>
+            {STATUS_LABEL[parcel.status]}
+          </span>
+        </Row>
+      </div>
+
+      <p className="mt-3 text-center text-[12px] leading-relaxed text-muted">
+        The proof for this stop was captured on another device. View the full
+        evidence — photo, signature and GPS — in the dispatcher portal.
+      </p>
+
+      <button
+        type="button"
+        onClick={onReset}
+        className="mt-4 w-full rounded-[13px] bg-navy p-[15px] font-serif text-base tracking-[0.3px] text-white transition hover:bg-navy-600 active:translate-y-px"
+      >
+        Back to today's stops
+      </button>
+    </div>
+  )
 }
