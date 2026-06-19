@@ -14,8 +14,8 @@
 --     security_invoker) view owned by a role that clears `shipments`' RLS, so
 --     `epod_reader` can read through it despite the base table's RLS.
 --   * The view enforces BOTH scopings the function relies on:
---       - COLUMN scope: only the 9 recipient fields the function needs — no
---         phone / email / tax / IOSS / sender / return-to columns.
+--       - COLUMN scope: the 9 recipient fields + 7 sender fields the function
+--         needs — no phone / email / tax / IOSS / return-to columns.
 --       - ROW scope: `where is_deleted = false` excludes soft-deleted shipments
 --         (stale / withdrawn jobs whose PII must not resurface).
 --   The `enrich-shipments` function comments point back to this file.
@@ -37,7 +37,10 @@ create or replace view public.epod_shipment_lookup as
   select tracking_number,
          recipient_full_name, recipient_company,
          recipient_address1, recipient_address2, recipient_address3,
-         recipient_city, recipient_county, recipient_postcode
+         recipient_city, recipient_county, recipient_postcode,
+         sender_company,
+         sender_address1, sender_address2, sender_address3,
+         sender_city, sender_county, sender_postcode
   from public.shipments
   where is_deleted = false;        -- row scope: exclude soft-deleted shipments
 
