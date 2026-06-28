@@ -131,7 +131,7 @@ FROM (
          e.stage AS kind,
          (e.captured_at AT TIME ZONE 'Europe/London') AS event_local,
          ST_Y(e.location::geometry) AS lat, ST_X(e.location::geometry) AS lng,
-         COALESCE(p.postcode, p.area) AS loc_text,
+         COALESCE(p.postcode, p.delivery_area) AS loc_text,
          NULL::text AS info,
          NULL::boolean AS signed
   FROM parcel_events e
@@ -144,7 +144,7 @@ FROM (
          r.status AS kind,
          (r.captured_at AT TIME ZONE 'Europe/London') AS event_local,
          ST_Y(r.location::geometry) AS lat, ST_X(r.location::geometry) AS lng,
-         COALESCE(p.postcode, p.area) AS loc_text,
+         COALESCE(p.postcode, p.delivery_area) AS loc_text,
          CASE WHEN r.status = 'delivered' THEN r.received_by ELSE r.failure_reason END AS info,
          (r.signature_path IS NOT NULL) AS signed
   FROM pod_records r
@@ -178,6 +178,28 @@ def clip(value, length):
     return s[:length]
 
 
+def preflight_schema(cur) -> None:
+    """Fail fast and legibly if the ePOD schema has drifted under DISCOVER_SQL.
+
+    DISCOVER_SQL is raw SQL, outside the app's TypeScript types, so a renamed or
+    dropped column otherwise surfaces only as a cryptic UndefinedColumn crash on
+    every 5-minute tick (this is exactly how parcels.area -> delivery_area, shipped
+    2026-06-19 with no migration, broke us). Planning the query with LIMIT 0
+    resolves every column reference without fetching a single row — turning the
+    next drift into one actionable line instead of a recurring stack trace.
+    """
+    try:
+        cur.execute(f"SELECT 1 FROM ({DISCOVER_SQL}) _preflight LIMIT 0")
+    except (psycopg2.errors.UndefinedColumn, psycopg2.errors.UndefinedTable) as e:
+        detail = str(e).splitlines()[0].strip()
+        sys.exit(
+            "ePOD schema drift: DISCOVER_SQL references a column/table that no "
+            f"longer exists -> {detail}\n"
+            "Update DISCOVER_SQL in this script to match the current "
+            "parcels / parcel_events / pod_records schema."
+        )
+
+
 def main() -> None:
     load_dotenv(pathlib.Path(__file__).with_name(".env"))
 
@@ -203,6 +225,7 @@ def main() -> None:
     gw = None
     pushed = skipped = synced = 0
     try:
+        preflight_schema(cur)  # bail with a clear message if the ePOD schema drifted
         gw = pyodbc.connect(gw_conn, timeout=15)
         gwc = gw.cursor()
 
