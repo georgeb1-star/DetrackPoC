@@ -15,6 +15,7 @@ export function CollectionsScreen() {
   const [error, setError] = useState<string | null>(null)
   const [depotFilter, setDepotFilter] = useState('all')
   const [driverFilter, setDriverFilter] = useState('all')
+  const [page, setPage] = useState(0)
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
@@ -65,24 +66,28 @@ export function CollectionsScreen() {
     [items, depotFilter, driverFilter],
   )
 
-  // Group by depot, newest first within each.
-  const groups = useMemo(() => {
+  // Flat ordered list (depot A→Z, newest collection first), paginated so a long
+  // history doesn't become one endless scroll; the depot grouping is applied to
+  // the current page. totalDepots counts across all matches, not just the page.
+  const PAGE_SIZE = 18
+  const at = (p: Parcel) => (typeof p.meta?.collected_at === 'string' ? (p.meta.collected_at as string) : '')
+  const depotOf = (p: Parcel) => ms(p, 'site_name') ?? 'Unknown depot'
+  const ordered = [...filtered].sort((a, b) => depotOf(a).localeCompare(depotOf(b)) || at(b).localeCompare(at(a)))
+  const totalDepots = new Set(ordered.map(depotOf)).size
+  const pageCount = Math.max(1, Math.ceil(ordered.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const pageItems = ordered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
+  const groups = (() => {
     const m = new Map<string, Parcel[]>()
-    for (const p of filtered) {
-      const depot = ms(p, 'site_name') ?? 'Unknown depot'
-      ;(m.get(depot) ?? m.set(depot, []).get(depot)!).push(p)
-    }
-    // Most-recent collection first within each depot.
-    const at = (p: Parcel) => (typeof p.meta?.collected_at === 'string' ? (p.meta.collected_at as string) : '')
-    for (const [, arr] of m) arr.sort((a, b) => at(b).localeCompare(at(a)))
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-  }, [filtered])
+    for (const p of pageItems) (m.get(depotOf(p)) ?? m.set(depotOf(p), []).get(depotOf(p))!).push(p)
+    return [...m.entries()]
+  })()
 
   return (
     <AdminShell
       active="collections"
       title="Collections"
-      meta={items ? `${filtered.length} collected · ${groups.length} depot${groups.length === 1 ? '' : 's'}` : '…'}
+      meta={items ? `${filtered.length} collected · ${totalDepots} depot${totalDepots === 1 ? '' : 's'}` : '…'}
     >
       {error && (
         <div className="mb-4 rounded-[11px] border border-fail/40 bg-fail/10 px-3 py-2.5 text-[13px] text-fail">{error}</div>
@@ -93,7 +98,10 @@ export function CollectionsScreen() {
           Depot
           <select
             value={depotFilter}
-            onChange={(e) => setDepotFilter(e.target.value)}
+            onChange={(e) => {
+              setDepotFilter(e.target.value)
+              setPage(0)
+            }}
             className="rounded-[10px] border border-line bg-white px-2.5 py-2 text-[13px] text-ink focus:border-navy-500 focus:outline-none"
           >
             <option value="all">All depots</option>
@@ -106,7 +114,10 @@ export function CollectionsScreen() {
           Driver
           <select
             value={driverFilter}
-            onChange={(e) => setDriverFilter(e.target.value)}
+            onChange={(e) => {
+              setDriverFilter(e.target.value)
+              setPage(0)
+            }}
             className="rounded-[10px] border border-line bg-white px-2.5 py-2 text-[13px] text-ink focus:border-navy-500 focus:outline-none"
           >
             <option value="all">All drivers</option>
@@ -150,6 +161,33 @@ export function CollectionsScreen() {
               </div>
             </section>
           ))}
+        </div>
+      )}
+
+      {pageCount > 1 && (
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <span className="text-[12px] text-muted">
+            {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, ordered.length)} of {ordered.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={safePage === 0}
+              onClick={() => setPage(safePage - 1)}
+              className="rounded-[9px] border border-line bg-white px-3 py-1.5 text-[13px] font-semibold text-navy-500 transition hover:border-navy-500/40 disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <span className="text-[12px] tabular-nums text-muted">Page {safePage + 1} / {pageCount}</span>
+            <button
+              type="button"
+              disabled={safePage >= pageCount - 1}
+              onClick={() => setPage(safePage + 1)}
+              className="rounded-[9px] border border-line bg-white px-3 py-1.5 text-[13px] font-semibold text-navy-500 transition hover:border-navy-500/40 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
     </AdminShell>
