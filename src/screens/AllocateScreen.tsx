@@ -172,19 +172,13 @@ export function AllocateScreen() {
                   {stops.length === 0 ? (
                     <div className="px-4 py-3 text-[12.5px] text-muted">No parcels yet.</div>
                   ) : (
-                    <div className="flex flex-col">
-                      {stops.map((p) => (
-                        <ParcelRow
-                          key={p.id}
-                          parcel={p}
-                          routes={routes}
-                          driverName={driverName}
-                          busy={busy}
-                          inset
-                          onAssign={(routeId) => void assign(p.id, routeId)}
-                        />
-                      ))}
-                    </div>
+                    <RouteStops
+                      stops={stops}
+                      routes={routes}
+                      driverName={driverName}
+                      busy={busy}
+                      onAssign={(id, routeId) => void assign(id, routeId)}
+                    />
                   )}
                 </article>
               )
@@ -198,6 +192,70 @@ export function AllocateScreen() {
         </section>
       </div>
     </AdminShell>
+  )
+}
+
+/** A route's allocated parcels, paginated — a recurring run can hold hundreds
+ *  of stops (one per shop per service day), so page them 10 at a time inside
+ *  the card instead of an endless in-card scroll. Own page state per route. */
+function RouteStops({
+  stops,
+  routes,
+  driverName,
+  busy,
+  onAssign,
+}: {
+  stops: Parcel[]
+  routes: { id: string; name: string; driver_id: string | null }[]
+  driverName: (id: string | null) => string
+  busy: boolean
+  onAssign: (parcelId: string, routeId: string | null) => void
+}) {
+  const [page, setPage] = useState(0)
+  const PAGE_SIZE = 10
+  const pageCount = Math.max(1, Math.ceil(stops.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const shown = stops.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
+  return (
+    <div className="flex flex-col">
+      {shown.map((p) => (
+        <ParcelRow
+          key={p.id}
+          parcel={p}
+          routes={routes}
+          driverName={driverName}
+          busy={busy}
+          inset
+          onAssign={(routeId) => onAssign(p.id, routeId)}
+        />
+      ))}
+      {pageCount > 1 && (
+        <div className="flex items-center justify-between gap-3 border-t border-line bg-paper/40 px-4 py-2">
+          <span className="text-[11.5px] text-muted">
+            {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, stops.length)} of {stops.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={safePage === 0}
+              onClick={() => setPage(safePage - 1)}
+              className="rounded-[8px] border border-line bg-white px-2.5 py-1 text-[12px] font-semibold text-navy-500 transition hover:border-navy-500/40 disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <span className="text-[11.5px] tabular-nums text-muted">{safePage + 1}/{pageCount}</span>
+            <button
+              type="button"
+              disabled={safePage >= pageCount - 1}
+              onClick={() => setPage(safePage + 1)}
+              className="rounded-[8px] border border-line bg-white px-2.5 py-1 text-[12px] font-semibold text-navy-500 transition hover:border-navy-500/40 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
