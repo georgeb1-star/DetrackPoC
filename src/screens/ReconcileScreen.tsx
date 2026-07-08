@@ -156,51 +156,90 @@ export function ReconcileScreen() {
 
         {/* Exceptions + accounted lists */}
         <section className="grid items-start gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          <Bucket title="Still out" tone="warn" count={missing.length} empty="Nothing outstanding.">
-            {missing.map((p) => (
-              <Line key={p.id} tn={p.tracking_number} sub={`${p.recipient_name} · ${p.delivery_area || '?'}`} />
-            ))}
-          </Bucket>
-          <Bucket title="Unexpected" tone="fail" count={unexpected.length} empty="No surprises.">
-            {unexpected.map((tn) => (
-              <Line key={tn} tn={tn} sub="Not on the out-list" tone="fail" />
-            ))}
-          </Bucket>
-          <Bucket title="Accounted for" tone="ok" count={accounted.length} empty="Scan items to begin.">
-            {accounted.map((p) => (
-              <Line key={p.id} tn={p.tracking_number} sub={p.recipient_name} tone="ok" />
-            ))}
-          </Bucket>
+          <Bucket
+            title="Still out"
+            tone="warn"
+            empty="Nothing outstanding."
+            items={missing}
+            renderItem={(p) => <Line key={p.id} tn={p.tracking_number} sub={`${p.recipient_name} · ${p.delivery_area || '?'}`} />}
+          />
+          <Bucket
+            title="Unexpected"
+            tone="fail"
+            empty="No surprises."
+            items={unexpected}
+            renderItem={(tn) => <Line key={tn} tn={tn} sub="Not on the out-list" tone="fail" />}
+          />
+          <Bucket
+            title="Accounted for"
+            tone="ok"
+            empty="Scan items to begin."
+            items={accounted}
+            renderItem={(p) => <Line key={p.id} tn={p.tracking_number} sub={p.recipient_name} tone="ok" />}
+          />
         </section>
       </div>
     </AdminShell>
   )
 }
 
-function Bucket({
+function Bucket<T>({
   title,
   tone,
-  count,
   empty,
-  children,
+  items,
+  renderItem,
 }: {
   title: string
   tone: 'ok' | 'warn' | 'fail'
-  count: number
   empty: string
-  children: React.ReactNode
+  items: T[]
+  renderItem: (item: T) => React.ReactNode
 }) {
+  const [page, setPage] = useState(0)
+  const PAGE = 10
+  const pageCount = Math.max(1, Math.ceil(items.length / PAGE))
+  const safePage = Math.min(page, pageCount - 1)
+  const shown = items.slice(safePage * PAGE, safePage * PAGE + PAGE)
   const dot = tone === 'ok' ? 'bg-ok' : tone === 'fail' ? 'bg-fail' : 'bg-gold'
   return (
     <div>
       <p className="section-label mb-2 flex items-center gap-2">
         <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
-        {title} · {count}
+        {title} · {items.length}
       </p>
-      {count === 0 ? (
+      {items.length === 0 ? (
         <div className="rounded-2xl border border-line bg-white px-4 py-8 text-center text-[12.5px] text-muted">{empty}</div>
       ) : (
-        <div className="flex flex-col gap-2">{children}</div>
+        <>
+          <div className="flex flex-col gap-2">{shown.map(renderItem)}</div>
+          {pageCount > 1 && (
+            <div className="mt-2 flex items-center justify-between gap-2 text-[11.5px] text-muted">
+              <span>
+                {safePage * PAGE + 1}–{Math.min((safePage + 1) * PAGE, items.length)} of {items.length}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={safePage === 0}
+                  onClick={() => setPage(safePage - 1)}
+                  className="rounded-[7px] border border-line bg-white px-2 py-0.5 font-semibold text-navy-500 disabled:opacity-40"
+                >
+                  Prev
+                </button>
+                <span className="tabular-nums">{safePage + 1}/{pageCount}</span>
+                <button
+                  type="button"
+                  disabled={safePage >= pageCount - 1}
+                  onClick={() => setPage(safePage + 1)}
+                  className="rounded-[7px] border border-line bg-white px-2 py-0.5 font-semibold text-navy-500 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

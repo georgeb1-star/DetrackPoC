@@ -650,12 +650,18 @@ function JobParcels({
   onAssign: (ids: string[], routeId: string | null) => void
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [page, setPage] = useState(0)
 
   // Parcels can disappear/refresh under us (realtime) — keep the selection valid.
   const validIds = useMemo(() => new Set(parcels.map((p) => p.id)), [parcels])
   const picked = useMemo(() => [...selected].filter((id) => validIds.has(id)), [selected, validIds])
 
   const allOn = parcels.length > 0 && picked.length === parcels.length
+  // Page the rows (a job can hold 64+ parcels); select-all still spans them all.
+  const PAGE_SIZE = 12
+  const pageCount = Math.max(1, Math.ceil(parcels.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const shown = parcels.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
   function toggle(id: string) {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -707,7 +713,7 @@ function JobParcels({
 
       {/* Parcel rows */}
       <div className="flex flex-col">
-        {parcels.map((p) => {
+        {shown.map((p) => {
           const on = picked.includes(p.id)
           const rName = routeName(p.route_id)
           return (
@@ -743,6 +749,33 @@ function JobParcels({
           )
         })}
       </div>
+
+      {pageCount > 1 && (
+        <div className="flex items-center justify-between gap-3 border-t border-line bg-paper/40 px-4 py-2">
+          <span className="text-[11.5px] text-muted">
+            {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, parcels.length)} of {parcels.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={safePage === 0}
+              onClick={() => setPage(safePage - 1)}
+              className="rounded-[8px] border border-line bg-white px-2.5 py-1 text-[12px] font-semibold text-navy-500 transition hover:border-navy-500/40 disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <span className="text-[11.5px] tabular-nums text-muted">{safePage + 1}/{pageCount}</span>
+            <button
+              type="button"
+              disabled={safePage >= pageCount - 1}
+              onClick={() => setPage(safePage + 1)}
+              className="rounded-[8px] border border-line bg-white px-2.5 py-1 text-[12px] font-semibold text-navy-500 transition hover:border-navy-500/40 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
