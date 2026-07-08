@@ -146,6 +146,10 @@ export interface Parcel {
   route_id: string | null
   /** Manifest/job this parcel was imported on. null = seeded/manual. */
   manifest_id: string | null
+  /** Extra source columns kept verbatim. Ad-hoc collections stash their
+   *  provenance here: source='ad-hoc', site_id, site_name, collected_at,
+   *  collected_by (driver id). */
+  meta: Record<string, unknown> | null
   created_at: string
 }
 

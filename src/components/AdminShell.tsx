@@ -1,13 +1,14 @@
 import { signOut } from '../hooks/useSession'
 
 /** Which dispatch section is active — drives the app-bar tab highlight. */
-export type AdminTab = 'allocate' | 'jobs' | 'sites' | 'pods' | 'reconcile' | 'admin'
+export type AdminTab = 'allocate' | 'jobs' | 'sites' | 'pods' | 'collections' | 'reconcile' | 'admin'
 
 const TABS: { key: AdminTab; label: string; short?: string; href: string }[] = [
   { key: 'allocate', label: 'Allocate', href: '#/allocate' },
   { key: 'jobs', label: 'Jobs', href: '#/jobs' },
   { key: 'sites', label: 'Sites', href: '#/sites' },
   { key: 'pods', label: 'Captured PODs', short: 'PODs', href: '#/dispatch' },
+  { key: 'collections', label: 'Collections', short: 'Collect', href: '#/collections' },
   { key: 'reconcile', label: 'Reconcile', short: 'Recon', href: '#/reconcile' },
   { key: 'admin', label: 'Admin', href: '#/admin' },
 ]

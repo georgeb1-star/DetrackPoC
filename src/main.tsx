@@ -9,6 +9,7 @@ import { startSyncTriggers } from './lib/syncWorker.ts'
 import { AdminScreen } from './screens/AdminScreen.tsx'
 import { AllocateScreen } from './screens/AllocateScreen.tsx'
 import { DispatcherScreen } from './screens/DispatcherScreen.tsx'
+import { CollectionsScreen } from './screens/CollectionsScreen.tsx'
 import { JobsScreen } from './screens/JobsScreen.tsx'
 import { LoginScreen } from './screens/LoginScreen.tsx'
 import { ReconcileScreen } from './screens/ReconcileScreen.tsx'
@@ -47,7 +48,7 @@ function Root() {
   const isAdmin = profile?.role === 'admin'
   // A driver who deep-links to a dispatcher route gets bounced to their run.
   useEffect(() => {
-    if (profile && !isAdmin && ['#/dispatch', '#/allocate', '#/jobs', '#/sites', '#/reconcile', '#/admin'].includes(hash)) {
+    if (profile && !isAdmin && ['#/dispatch', '#/allocate', '#/jobs', '#/sites', '#/collections', '#/reconcile', '#/admin'].includes(hash)) {
       window.location.hash = ''
     }
   }, [profile, isAdmin, hash])
@@ -66,6 +67,8 @@ function Root() {
         <JobsScreen />
       ) : hash === '#/sites' ? (
         <SitesScreen />
+      ) : hash === '#/collections' ? (
+        <CollectionsScreen />
       ) : hash === '#/reconcile' ? (
         <ReconcileScreen />
       ) : hash === '#/admin' ? (
