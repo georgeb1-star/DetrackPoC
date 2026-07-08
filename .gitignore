@@ -21,6 +21,9 @@ __pycache__/
 supabase/.temp/
 supabase/.branches/
 
+# generated pilot label sheets (carry real customer addresses — keep out of git)
+coupon-labels/
+
 # editor / OS
 .vscode/*
 !.vscode/extensions.json
