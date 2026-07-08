@@ -58,12 +58,18 @@ async function main() {
   const results = []
   for (const a of accounts) {
     const email = a.kind === 'driver' ? usernameToEmail(a.username) : a.email.toLowerCase()
-    const password = genPassword()
     let id = byEmail.get(email)
+    let password = null
     if (id) {
-      const { error } = await db.auth.admin.updateUserById(id, { password })
-      if (error) { results.push(`${email}: UPDATE FAILED ${error.message}`); continue }
+      // Existing login: leave the password intact so a re-run can't invalidate
+      // credentials already handed out. Set RESET_PW=1 to force a new one.
+      if (process.env.RESET_PW) {
+        password = genPassword()
+        const { error } = await db.auth.admin.updateUserById(id, { password })
+        if (error) { results.push(`${email}: PW RESET FAILED ${error.message}`); continue }
+      }
     } else {
+      password = genPassword()
       const { data, error } = await db.auth.admin.createUser({ email, password, email_confirm: true })
       if (error) { results.push(`${email}: CREATE FAILED ${error.message}`); continue }
       id = data.user.id
@@ -71,8 +77,9 @@ async function main() {
     const { error: pErr } = await db.from('profiles').upsert(
       { id, role: a.kind, driver_id: a.kind === 'driver' ? a.driver_id : null, full_name: a.full_name },
       { onConflict: 'id' })
+    const login = a.kind === 'driver' ? a.username : email
     results.push(pErr ? `${email}: profile FAILED ${pErr.message}`
-      : `${a.full_name.padEnd(15)} ${a.kind.padEnd(6)} login: ${a.kind === 'driver' ? a.username : email}   password: ${password}`)
+      : `${a.full_name.padEnd(15)} ${a.kind.padEnd(6)} login: ${login.padEnd(22)} ${password ? 'password: ' + password : '(existing — unchanged)'}`)
   }
   console.log('\n=== Pilot accounts (hand these out; change on first use) ===')
   results.forEach((r) => console.log('  ' + r))
