@@ -3,6 +3,7 @@ import { AdminShell } from '../components/AdminShell'
 import { useFleet } from '../hooks/useFleet'
 import { supabase } from '../lib/supabase'
 import { matchRoute, unallocatedReason } from '../lib/allocate'
+import { fmtDistance, orderByProximity, parseEwkbPoint, runMetrics } from '../lib/geo'
 import type { Parcel } from '../lib/types'
 
 /** Dispatcher allocation: assign parcels to a route (each route is run by one
@@ -149,6 +150,11 @@ export function AllocateScreen() {
           <div className="flex flex-col gap-3">
             {routes.map((r) => {
               const stops = byRoute.get(r.id) ?? []
+              // Rough drive distance for the route, in nearest-neighbour order —
+              // lets the dispatcher balance runs at a glance.
+              const routeM = runMetrics(
+                orderByProximity(stops, (p) => parseEwkbPoint(p.destination)).map((p) => parseEwkbPoint(p.destination)),
+              ).totalM
               return (
                 <article key={r.id} className="overflow-hidden rounded-2xl border border-line bg-white">
                   <div className="flex items-baseline justify-between gap-3 border-b border-line bg-paper/60 px-4 py-2.5">
@@ -160,6 +166,7 @@ export function AllocateScreen() {
                     </div>
                     <span className="font-mono text-[11px] tracking-[0.5px] text-navy-500">
                       {stops.length} stop{stops.length === 1 ? '' : 's'}
+                      {routeM > 0 && <span className="text-muted"> · ≈{fmtDistance(routeM)}</span>}
                     </span>
                   </div>
                   {stops.length === 0 ? (

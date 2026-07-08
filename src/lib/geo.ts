@@ -28,6 +28,48 @@ export function fmtDistance(m: number): string {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`
 }
 
+/** Straight-line drive metrics for an ORDERED run: the total distance across
+ *  consecutive stops, plus the per-stop leg (distance from the previous located
+ *  stop). Points may be null (a stop with no geocode) — those are skipped so a
+ *  missing pin doesn't break the chain; their leg is null. Distances are
+ *  haversine (as-the-crow-flies), so a real road route is a bit longer — enough
+ *  to compare/plan runs, not a promise. */
+export function runMetrics(
+  pts: ({ lat: number; lng: number } | null)[],
+): { totalM: number; legs: (number | null)[] } {
+  const legs: (number | null)[] = pts.map(() => null)
+  let total = 0
+  let prev: { lat: number; lng: number } | null = null
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i]
+    if (p && prev) {
+      const d = haversineM(prev, p)
+      legs[i] = d
+      total += d
+    }
+    if (p) prev = p
+  }
+  return { totalM: total, legs }
+}
+
+/** Rough run time = drive time (crow-flies distance ÷ an urban average) plus a
+ *  fixed dwell per stop. Deliberately a ballpark for planning — labelled "~" in
+ *  the UI, never presented as a committed ETA. */
+export function estimateRunMinutes(
+  totalM: number,
+  stops: number,
+  { kmh = 24, dwellMin = 3 }: { kmh?: number; dwellMin?: number } = {},
+): number {
+  return Math.round((totalM / 1000 / kmh) * 60 + stops * dwellMin)
+}
+
+/** "3h 40m" / "45m" */
+export function fmtDuration(min: number): string {
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
+
 /** Greedy nearest-neighbour ordering — turns a set of stops into a sensible
  *  drive sequence instead of an arbitrary (e.g. tracking-number) order. Items
  *  with no point sort to the end (can't be placed). Deterministic: starts from

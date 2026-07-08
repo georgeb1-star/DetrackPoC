@@ -4,7 +4,7 @@ import { TopBar } from '../components/TopBar'
 import { NO_FIX_NOTES, useGeolocation } from '../hooks/useGeolocation'
 import { useSyncStatus } from '../hooks/useSyncStatus'
 import { queueEvent } from '../lib/events'
-import { orderByProximity, parseEwkbPoint } from '../lib/geo'
+import { estimateRunMinutes, fmtDistance, fmtDuration, orderByProximity, parseEwkbPoint, runMetrics } from '../lib/geo'
 import { syncNow } from '../lib/syncWorker'
 import {
   isRollover,
@@ -142,6 +142,11 @@ export function StopsScreen({
   // arrives in. Stops with no geocode fall to the end. Plain const (active is a
   // fresh array each render, so memoising wouldn't help — see collectGroups).
   const deliverOrder = orderByProximity(active, (p) => parseEwkbPoint(p.destination))
+  // Run metrics over the ordered stops: total drive distance + per-stop legs +
+  // a rough time estimate (labelled "~" — see estimateRunMinutes).
+  const deliverPts = deliverOrder.map((p) => parseEwkbPoint(p.destination))
+  const { totalM: runMeters, legs: runLegs } = runMetrics(deliverPts)
+  const runUnlocated = deliverPts.filter((p) => p == null).length
 
   /** Record a quick stage scan (collection/warehouse): local queue first, then
    *  a fire-and-forget sync. Returns the warn-but-allow note (skipped or
@@ -266,7 +271,16 @@ export function StopsScreen({
           </div>
         )}
 
-        {/* Step 5: Deliver phase — existing active-stops grid, scoped to deliver */}
+        {/* Deliver phase: run summary (drive distance + rough time) then the
+            nearest-neighbour-ordered stops. */}
+        {phase === 'deliver' && active.length > 0 && runMeters > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-[12px] border border-line bg-white px-4 py-2.5 text-[13px]">
+            <span className="font-semibold text-ink">≈ {fmtDistance(runMeters)} drive</span>
+            <span className="text-muted">~{fmtDuration(estimateRunMinutes(runMeters, active.length))} est.</span>
+            <span className="text-muted">{active.length} stops</span>
+            {runUnlocated > 0 && <span className="text-gold">{runUnlocated} without a pin</span>}
+          </div>
+        )}
         {phase === 'deliver' && (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {deliverOrder.map((p, i) => {
@@ -302,6 +316,7 @@ export function StopsScreen({
                   ) : (
                     <span className="text-[11px] font-bold uppercase tracking-[0.6px] text-muted">
                       Stop {i + 1}
+                      {runLegs[i] != null && <span className="text-navy-500"> · +{fmtDistance(runLegs[i]!)}</span>}
                     </span>
                   )}
                 </StopRow>
