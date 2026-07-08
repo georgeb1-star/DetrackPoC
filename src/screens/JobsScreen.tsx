@@ -425,6 +425,15 @@ function JobsList({
   const [openId, setOpenId] = useState<string | null>(null)
   const [exporting, setExporting] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  // Jobs grow one manifest per recurring service day, so filter + paginate the
+  // list rather than scroll a long page.
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
+  const PAGE_SIZE = 12
+  const filtered = (manifests ?? []).filter((m) => m.name.toLowerCase().includes(query.trim().toLowerCase()))
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const shown = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
 
   async function exportTracking(job?: Manifest) {
     setExporting(job?.id ?? 'all')
@@ -513,13 +522,24 @@ function JobsList({
 
   return (
     <section>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="section-label">Jobs</p>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <p className="section-label flex-none">Jobs</p>
+        {manifests && manifests.length > PAGE_SIZE && (
+          <input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setPage(0)
+            }}
+            placeholder="Filter jobs by name…"
+            className="min-w-0 flex-1 rounded-[10px] border border-line bg-white px-3 py-1.5 text-[13px] text-ink focus:border-navy-500 focus:outline-none focus:ring-[3px] focus:ring-navy-500/10"
+          />
+        )}
         <button
           type="button"
           disabled={exporting != null}
           onClick={() => void exportTracking()}
-          className="rounded-[10px] border border-navy bg-white px-3.5 py-2 font-serif text-[13px] text-navy transition hover:bg-paper active:translate-y-px disabled:opacity-40"
+          className="ml-auto flex-none rounded-[10px] border border-navy bg-white px-3.5 py-2 font-serif text-[13px] text-navy transition hover:bg-paper active:translate-y-px disabled:opacity-40"
         >
           {exporting === 'all' ? 'Exporting…' : 'Export all tracking'}
         </button>
@@ -531,14 +551,14 @@ function JobsList({
         </div>
       )}
 
-      {manifests && manifests.length === 0 && (
+      {manifests && filtered.length === 0 && (
         <div className="rounded-2xl border border-line bg-white px-4 py-8 text-center text-[13px] text-muted">
-          No jobs yet — look up tracking numbers to create one.
+          {query ? `No jobs match “${query}”.` : 'No jobs yet — import a manifest or look up tracking numbers to create one.'}
         </div>
       )}
 
       <div className="flex flex-col gap-2">
-        {manifests?.map((job) => {
+        {shown.map((job) => {
           const stops = byManifest.get(job.id) ?? []
           const delivered = stops.filter((p) => p.status === 'delivered').length
           const open = openId === job.id
@@ -583,6 +603,33 @@ function JobsList({
           )
         })}
       </div>
+
+      {pageCount > 1 && (
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <span className="text-[12px] text-muted">
+            {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={safePage === 0}
+              onClick={() => setPage(safePage - 1)}
+              className="rounded-[9px] border border-line bg-white px-3 py-1.5 text-[13px] font-semibold text-navy-500 transition hover:border-navy-500/40 disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <span className="text-[12px] tabular-nums text-muted">Page {safePage + 1} / {pageCount}</span>
+            <button
+              type="button"
+              disabled={safePage >= pageCount - 1}
+              onClick={() => setPage(safePage + 1)}
+              className="rounded-[9px] border border-line bg-white px-3 py-1.5 text-[13px] font-semibold text-navy-500 transition hover:border-navy-500/40 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
