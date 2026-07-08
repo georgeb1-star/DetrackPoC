@@ -52,6 +52,7 @@ export function StopsScreen({
   driverId,
   sites,
   onSelectSite,
+  onCollectSite,
   onSelect,
   onViewReceipt,
 }: {
@@ -63,7 +64,10 @@ export function StopsScreen({
   driverId: string
   /** Stores/depots on this driver's route(s) — the no-manifest scan path. */
   sites?: Site[]
+  /** Capture a delivery against a store site (photo/signature POD). */
   onSelectSite?: (site: Site) => void
+  /** Ad-hoc collection at a depot — scan not-pre-alerted items in. */
+  onCollectSite?: (site: Site) => void
   onSelect: (parcel: Parcel, scannedValue?: string) => void
   /** Re-opening a finished stop shows its read-only receipt, not the capture
    *  form — so the proof persists and a parcel can't be delivered twice. */
@@ -333,29 +337,47 @@ export function StopsScreen({
           <>
             <p className="section-label mb-3 mt-8">Sites · scan &amp; capture</p>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {sites.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => onSelectSite?.(s)}
-                  className="flex h-full w-full flex-col rounded-2xl border border-line bg-white p-4 text-left transition hover:border-navy-500/40 hover:shadow-[0_6px_20px_-10px_rgba(16,25,46,.35)] active:translate-y-px"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="text-[15px] font-semibold">{s.name}</div>
-                    <span className="flex-none rounded-full border border-navy-500/30 bg-navy-500/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] text-navy-500">
-                      {s.kind === 'both' ? 'Store · Depot' : s.kind}
-                    </span>
+              {sites.map((s) => {
+                const canCollect = s.kind === 'depot' || s.kind === 'both'
+                const canDeliver = s.kind === 'store' || s.kind === 'both'
+                return (
+                  <div
+                    key={s.id}
+                    className="flex h-full w-full flex-col rounded-2xl border border-line bg-white p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-[15px] font-semibold">{s.name}</div>
+                      <span className="flex-none rounded-full border border-navy-500/30 bg-navy-500/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] text-navy-500">
+                        {s.kind === 'both' ? 'Store · Depot' : s.kind}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[13px] leading-[1.45] text-muted">
+                      {s.address_line || 'No address'}
+                      {s.postcode ? `, ${s.postcode}` : ''}
+                    </div>
+                    <div className="mt-auto flex flex-wrap gap-2 pt-3">
+                      {canCollect && (
+                        <button
+                          type="button"
+                          onClick={() => onCollectSite?.(s)}
+                          className="flex-1 rounded-[11px] bg-navy-500 px-3 py-2 text-center text-[12.5px] font-semibold text-white transition hover:bg-[#1f46e0] active:translate-y-px"
+                        >
+                          Collect items →
+                        </button>
+                      )}
+                      {canDeliver && (
+                        <button
+                          type="button"
+                          onClick={() => onSelectSite?.(s)}
+                          className="flex-1 rounded-[11px] border border-line bg-white px-3 py-2 text-center text-[12.5px] font-semibold text-navy-500 transition hover:border-navy-500/40 active:translate-y-px"
+                        >
+                          Capture delivery →
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="mt-1 text-[13px] leading-[1.45] text-muted">
-                    {s.address_line || 'No address'}
-                    {s.postcode ? `, ${s.postcode}` : ''}
-                  </div>
-                  <div className="mt-auto flex items-center justify-between pt-3">
-                    <span className="text-[10px] font-bold uppercase tracking-[0.6px] text-gold">No manifest</span>
-                    <span className="text-[12px] font-semibold text-navy-500">Scan items →</span>
-                  </div>
-                </button>
-              ))}
+                )
+              })}
             </div>
           </>
         )}

@@ -58,9 +58,31 @@ export interface QueuedEvent {
   lastError: string | null
 }
 
+/** An ad-hoc collection scan in the local queue: a driver at a depot scans an
+ *  item that was never pre-alerted, so there's no parcel to match. On sync the
+ *  create_adhoc_parcel RPC turns each into a first-class parcel at 'collected'.
+ *  Same local-first rules as QueuedEvent — queued offline, drained by the sync
+ *  worker, kept (flag flipped) as history. */
+export interface QueuedAdhocScan {
+  /** Client UUID — idempotency key; also becomes the parcel + collection event id */
+  scanId: string
+  trackingScanned: string
+  siteId: string
+  siteName: string
+  capturedAt: string // ISO, device clock at the scan
+  location: Fix | null
+  driverId?: string
+  synced: 0 | 1
+  syncedAt: string | null
+  queuedAt: string
+  attempts: number
+  lastError: string | null
+}
+
 export const db = new Dexie('epod') as Dexie & {
   pods: EntityTable<QueuedPod, 'podId'>
   events: EntityTable<QueuedEvent, 'eventId'>
+  adhocScans: EntityTable<QueuedAdhocScan, 'scanId'>
   /** Read-through cache of the server stop list, so a cold start with no
    *  signal still shows the run sheet. The server stays the source of
    *  truth — every successful fetch replaces the cache. */
@@ -88,6 +110,14 @@ db.version(3).stores({
 db.version(4).stores({
   pods: 'podId, synced, queuedAt',
   events: 'eventId, synced, queuedAt',
+  parcels: 'id',
+  routes: 'id',
+  drivers: 'id',
+})
+db.version(5).stores({
+  pods: 'podId, synced, queuedAt',
+  events: 'eventId, synced, queuedAt',
+  adhocScans: 'scanId, synced, queuedAt',
   parcels: 'id',
   routes: 'id',
   drivers: 'id',

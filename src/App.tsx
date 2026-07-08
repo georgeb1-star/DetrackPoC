@@ -8,6 +8,7 @@ import type { QueuedPod } from './lib/db'
 import { subscribeSync } from './lib/syncEvents'
 import { isRollover, isTerminal, type Parcel, type Site } from './lib/types'
 import { CaptureScreen } from './screens/CaptureScreen'
+import { CollectScreen } from './screens/CollectScreen'
 import { ResultScreen, StopReceipt } from './screens/ResultScreen'
 import { SiteCaptureScreen } from './screens/SiteCaptureScreen'
 import { StopsScreen } from './screens/StopsScreen'
@@ -17,6 +18,7 @@ type View =
   | { name: 'stops' }
   | { name: 'capture'; parcel: Parcel; scannedValue: string }
   | { name: 'site'; site: Site }
+  | { name: 'collect'; site: Site }
   | { name: 'done'; pod: QueuedPod; previewUrl: string }
   // Re-opening a finished stop: read-only proof, never the capture form.
   | { name: 'receipt'; parcel: Parcel }
@@ -76,6 +78,11 @@ export default function App({ profile }: { profile: Profile }) {
     return <SiteCaptureScreen site={view.site} driverId={driverId} onBack={() => setView({ name: 'stops' })} />
   }
 
+  // Ad-hoc collection at a depot — scan not-pre-alerted items into the system.
+  if (view.name === 'collect') {
+    return <CollectScreen site={view.site} driverId={driverId} onBack={() => setView({ name: 'stops' })} />
+  }
+
   return (
     <AppShell fullName={profile.fullName} onSignOut={() => void signOut()}>
       {view.name === 'stops' && (
@@ -86,6 +93,7 @@ export default function App({ profile }: { profile: Profile }) {
           driverId={driverId}
           sites={sites ?? undefined}
           onSelectSite={(site) => setView({ name: 'site', site })}
+          onCollectSite={(site) => setView({ name: 'collect', site })}
           onSelect={(parcel, scannedValue) =>
             setView({ name: 'capture', parcel, scannedValue: scannedValue ?? parcel.tracking_number })
           }

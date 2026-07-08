@@ -1,3 +1,4 @@
+import { uploadAdhocScan } from './adhoc'
 import { db } from './db'
 import { uploadEvent } from './events'
 import { uploadPod } from './pod'
@@ -58,17 +59,37 @@ export async function syncNow(opts: { includeStuck?: boolean } = {}): Promise<vo
   // Order between the two doesn't matter for correctness — parcels.status
   // only ever advances forward, so a delivered POD syncing before its
   // collection scan can't be regressed by it.
+  const queuedAdhoc = (await db.adhocScans.where('synced').equals(0).sortBy('queuedAt')).filter(
+    (a) => opts.includeStuck || a.attempts < MAX_AUTO_ATTEMPTS,
+  )
   const queuedEvents = (await db.events.where('synced').equals(0).sortBy('queuedAt')).filter(
     (ev) => opts.includeStuck || ev.attempts < MAX_AUTO_ATTEMPTS,
   )
   const queuedPods = (await db.pods.where('synced').equals(0).sortBy('queuedAt')).filter(
     (pod) => opts.includeStuck || pod.attempts < MAX_AUTO_ATTEMPTS,
   )
-  if (!queuedEvents.length && !queuedPods.length) return
+  if (!queuedAdhoc.length && !queuedEvents.length && !queuedPods.length) return
 
   syncing = true
   emitSync()
   try {
+    // Ad-hoc collections first: each becomes a 'collected' parcel, and any later
+    // scan events on it need the parcel to exist. Same poison/idempotency shape.
+    for (const scan of queuedAdhoc) {
+      try {
+        await uploadAdhocScan(scan)
+        await db.adhocScans.update(scan.scanId, { synced: 1, syncedAt: new Date().toISOString(), lastError: null })
+      } catch (e) {
+        const authLapse = !(await ensureSession())
+        await db.adhocScans.update(scan.scanId, {
+          attempts: authLapse ? scan.attempts : scan.attempts + 1,
+          lastError: e instanceof Error ? e.message : String(e),
+        })
+        if (!navigator.onLine || authLapse) break
+      } finally {
+        emitSync()
+      }
+    }
     for (const event of queuedEvents) {
       try {
         const syncedAt = await uploadEvent(event)
