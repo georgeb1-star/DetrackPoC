@@ -4,7 +4,7 @@
 import path from 'node:path'
 import puppeteer from 'puppeteer-core'
 
-const BASE = process.argv[2] ?? 'http://localhost:5190'
+const BASE = process.argv[2] ?? 'http://localhost:5173'
 const TEMP = process.env.TEMP ?? '.'
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
 
@@ -41,8 +41,8 @@ const clickText = async (page, sel, text) => {
 }
 const login = async (page, email, hash = '#/') => {
   await page.goto(`${BASE}/${hash}`, { waitUntil: 'networkidle2' })
-  await page.waitForSelector('input[type=email]', { timeout: 25000 })
-  await page.type('input[type=email]', email)
+  await page.waitForSelector('input[type=text]', { timeout: 25000 })
+  await page.type('input[type=text]', email)
   await page.type('input[type=password]', 'citipost')
   await page.click('button[type=submit]')
 }
@@ -61,14 +61,14 @@ const overflow = (page) =>
 const ctx1 = await browser.createBrowserContext()
 const p1 = await mobilePage(ctx1)
 await p1.goto(`${BASE}/#/`, { waitUntil: 'networkidle2' })
-await p1.waitForSelector('input[type=email]', { timeout: 25000 })
+await p1.waitForSelector('input[type=text]', { timeout: 25000 })
 await shot(p1, '01-login')
 console.log('login overflow:', JSON.stringify(await overflow(p1)))
 
 // ── Driver (sam) ────────────────────────────────────────────────────────────
 await ctx1.overridePermissions(BASE, ['geolocation'])
 await p1.setGeolocation({ latitude: 51.48132, longitude: 0.16505, accuracy: 8 })
-await p1.type('input[type=email]', 'sam@citipost.test')
+await p1.type('input[type=text]', 'sam@citipost.test')
 await p1.type('input[type=password]', 'citipost')
 await p1.click('button[type=submit]')
 await waitText(p1, "Today's stops")
