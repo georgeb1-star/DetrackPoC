@@ -7,6 +7,7 @@ import { buildTrackingCsv, downloadCsv, type TrackingPod, type TrackingScan } fr
 import { STATUS_LABEL, STATUS_RANK, type Manifest, type ParcelStatus } from '../lib/types'
 import { enrichShipments } from '../lib/enrichApi'
 import { shipmentToParcelInput } from '../lib/enrich'
+import { buildDrafts, geocode, manifestPostcodes, parseManifestFile, type ManifestDraft } from '../lib/importManifest'
 
 /** The parcel fields the Jobs view needs (a subset of the full row). */
 interface JobParcel {
@@ -108,6 +109,7 @@ export function JobsScreen() {
 
       <div className="grid items-start gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
         <div className="xl:sticky xl:top-[82px] flex flex-col gap-6">
+          <ImportCard routes={routes} onImported={() => void load()} />
           <EnrichCard onImported={() => void load()} />
         </div>
 
@@ -146,6 +148,155 @@ async function commitParcels(name: string, sourceFilename: string, parcels: Parc
   const rows = parcels.map((p) => ({ ...p, manifest_id: manifestId }))
   const { error } = await supabase.from('parcels').upsert(rows, { onConflict: 'tracking_number' })
   if (error) throw new Error(error.message)
+}
+
+/** Create-or-update a job by name and upsert its parcels — full rows (incl.
+ *  destination/due_date/route_id), unlike commitParcels which takes ParcelInput. */
+async function commitManifestImport(name: string, sourceFilename: string, drafts: ManifestDraft[]): Promise<void> {
+  const { data: existing } = await supabase.from('manifests').select('id').eq('name', name).maybeSingle()
+  let manifestId: string
+  if (existing) {
+    manifestId = (existing as { id: string }).id
+    const { error } = await supabase.from('manifests')
+      .update({ imported_at: new Date().toISOString(), source_filename: sourceFilename }).eq('id', manifestId)
+    if (error) throw new Error(error.message)
+  } else {
+    const { data, error } = await supabase.from('manifests')
+      .insert({ name, source_filename: sourceFilename, reference: 'manifest-import' }).select().single()
+    if (error) throw new Error(error.message)
+    manifestId = (data as Manifest).id
+  }
+  // Explicit column mapping (drop the `branch` helper — not a parcels column).
+  const rows = drafts.map((d) => ({
+    tracking_number: d.tracking_number,
+    recipient_name: d.recipient_name,
+    address_line: d.address_line,
+    postcode: d.postcode,
+    destination: d.destination,
+    delivery_area: d.delivery_area,
+    collection_area: d.collection_area,
+    status: d.status,
+    due_date: d.due_date,
+    route_id: d.route_id,
+    manifest_id: manifestId,
+    meta: d.meta,
+  }))
+  const { error } = await supabase.from('parcels').upsert(rows, { onConflict: 'tracking_number' })
+  if (error) throw new Error(error.message)
+}
+
+/** Upload a coupon-style CSV/.xlsx → parse + geocode in the browser → preview →
+ *  commit as a job. Allocates each parcel to the route whose name matches its
+ *  Branch column (else unallocated). The self-serve path (meeting ask #4) — no
+ *  script, no GWOptical dependency. */
+function ImportCard({
+  routes,
+  onImported,
+}: {
+  routes: { id: string; name: string; driver_id: string | null }[]
+  onImported: () => void
+}) {
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const [fileName, setFileName] = useState('')
+  const [rows, setRows] = useState<Awaited<ReturnType<typeof parseManifestFile>> | null>(null)
+  const [geoMap, setGeoMap] = useState<Map<string, { lng: number; lat: number }>>(new Map())
+  const [date, setDate] = useState(todayIso)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+
+  const routeByName = useMemo(() => new Map(routes.map((r) => [r.name.toLowerCase(), r.id])), [routes])
+  const preview = useMemo(
+    () => (rows ? buildDrafts(rows, { date, geo: geoMap, routeByName }) : null),
+    [rows, date, geoMap, routeByName],
+  )
+  const byRoute = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const d of preview?.drafts ?? []) {
+      const key = d.route_id ? routes.find((r) => r.id === d.route_id)?.name ?? d.branch : `${d.branch || '?'} (unallocated)`
+      m.set(key, (m.get(key) ?? 0) + 1)
+    }
+    return [...m.entries()]
+  }, [preview, routes])
+
+  async function onFile(file: File | undefined) {
+    if (!file) return
+    setBusy(true); setProblem(null); setFileName(file.name); setRows(null)
+    try {
+      const parsed = await parseManifestFile(file)
+      if (!parsed.length) throw new Error('No rows found — is the header row present?')
+      const geo = await geocode(manifestPostcodes(parsed))
+      setRows(parsed); setGeoMap(geo)
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e))
+    }
+    setBusy(false)
+  }
+
+  async function commit() {
+    if (!preview || preview.drafts.length === 0) return
+    setBusy(true); setProblem(null)
+    try {
+      const base = fileName.replace(/\.(csv|xlsx)$/i, '') || 'Manifest'
+      await commitManifestImport(`${base} · ${date}`, fileName, preview.drafts)
+      setRows(null); setFileName(''); setGeoMap(new Map())
+      onImported()
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e))
+    }
+    setBusy(false)
+  }
+
+  const geoOk = preview ? preview.drafts.filter((d) => d.destination).length : 0
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-line bg-white">
+      <div className="border-b border-line bg-paper/60 px-4 py-2.5">
+        <p className="section-label">Import a manifest</p>
+      </div>
+      <div className="p-4">
+        {problem && (
+          <div className="mb-3 rounded-[11px] border border-fail/40 bg-fail/10 px-3 py-2.5 text-[13px] text-fail">{problem}</div>
+        )}
+
+        <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[1.4px] text-muted">Run date</label>
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+          className="mb-3 w-full rounded-[11px] border border-line bg-white px-3 py-[10px] text-sm text-ink focus:border-navy-500 focus:outline-none focus:ring-[3px] focus:ring-navy-500/10" />
+
+        <label className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-[11px] border-2 border-dashed border-navy-500/60 bg-white px-4 py-6 text-center transition active:scale-[0.99]">
+          <span className="text-[13.5px] font-semibold text-navy-500">{busy ? 'Reading…' : 'Choose a CSV or .xlsx'}</span>
+          <span className="text-[11.5px] text-muted">{fileName || 'Shop · Customer · Address1 · PostCode · Branch'}</span>
+          <input type="file" accept=".csv,.xlsx" className="hidden" onChange={(e) => void onFile(e.target.files?.[0])} />
+        </label>
+
+        {preview && (
+          <>
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+              <span className="font-semibold text-ok">{preview.drafts.length} parcels</span>
+              <span className="text-muted">{geoOk}/{preview.drafts.length} geocoded</span>
+              {preview.misses.length > 0 && <span className="font-semibold text-fail">{preview.misses.length} no geocode</span>}
+            </div>
+            <div className="mt-2 flex flex-col gap-1 text-[12px] text-muted">
+              {byRoute.map(([name, n]) => (
+                <div key={name} className="flex justify-between">
+                  <span>{name}</span>
+                  <span className="font-mono text-navy-500">{n}</span>
+                </div>
+              ))}
+            </div>
+            {preview.misses.length > 0 && (
+              <div className="mt-2 rounded-[11px] border border-gold/40 bg-gold/10 px-3 py-2 text-[12px] text-[#9a6a00]">
+                No geocode (still imported, no geofence): {preview.misses.slice(0, 6).join('; ')}{preview.misses.length > 6 ? ` +${preview.misses.length - 6} more` : ''}
+              </div>
+            )}
+            <button type="button" disabled={busy} onClick={() => void commit()}
+              className="mt-3 w-full rounded-[11px] bg-navy px-4 py-2.5 font-serif text-[15px] text-white transition hover:bg-navy-600 active:translate-y-px disabled:opacity-40">
+              {busy ? 'Importing…' : `Import ${preview.drafts.length} parcels`}
+            </button>
+          </>
+        )}
+      </div>
+    </section>
+  )
 }
 
 /** Paste/scan bare tracking numbers → look up addresses in GWOptical (via the
