@@ -11,6 +11,7 @@ import { AllocateScreen } from './screens/AllocateScreen.tsx'
 import { DispatcherScreen } from './screens/DispatcherScreen.tsx'
 import { JobsScreen } from './screens/JobsScreen.tsx'
 import { LoginScreen } from './screens/LoginScreen.tsx'
+import { ReconcileScreen } from './screens/ReconcileScreen.tsx'
 import { SitesScreen } from './screens/SitesScreen.tsx'
 
 // Service worker with an explicit update prompt — when a new build is
@@ -46,7 +47,7 @@ function Root() {
   const isAdmin = profile?.role === 'admin'
   // A driver who deep-links to a dispatcher route gets bounced to their run.
   useEffect(() => {
-    if (profile && !isAdmin && ['#/dispatch', '#/allocate', '#/jobs', '#/sites', '#/admin'].includes(hash)) {
+    if (profile && !isAdmin && ['#/dispatch', '#/allocate', '#/jobs', '#/sites', '#/reconcile', '#/admin'].includes(hash)) {
       window.location.hash = ''
     }
   }, [profile, isAdmin, hash])
@@ -65,6 +66,8 @@ function Root() {
         <JobsScreen />
       ) : hash === '#/sites' ? (
         <SitesScreen />
+      ) : hash === '#/reconcile' ? (
+        <ReconcileScreen />
       ) : hash === '#/admin' ? (
         <AdminScreen />
       ) : (
