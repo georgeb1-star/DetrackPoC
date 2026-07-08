@@ -4,6 +4,7 @@ import { TopBar } from '../components/TopBar'
 import { NO_FIX_NOTES, useGeolocation } from '../hooks/useGeolocation'
 import { useSyncStatus } from '../hooks/useSyncStatus'
 import { queueEvent } from '../lib/events'
+import { orderByProximity, parseEwkbPoint } from '../lib/geo'
 import { syncNow } from '../lib/syncWorker'
 import {
   isRollover,
@@ -136,6 +137,12 @@ export function StopsScreen({
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name))
   })()
 
+  // Deliver phase in a sensible DRIVE order: nearest-neighbour over the stops'
+  // geocoded destinations, not the arbitrary tracking-number order the list
+  // arrives in. Stops with no geocode fall to the end. Plain const (active is a
+  // fresh array each render, so memoising wouldn't help — see collectGroups).
+  const deliverOrder = orderByProximity(active, (p) => parseEwkbPoint(p.destination))
+
   /** Record a quick stage scan (collection/warehouse): local queue first, then
    *  a fire-and-forget sync. Returns the warn-but-allow note (skipped or
    *  duplicate stage) for the scan sheet's session log. */
@@ -262,7 +269,7 @@ export function StopsScreen({
         {/* Step 5: Deliver phase — existing active-stops grid, scoped to deliver */}
         {phase === 'deliver' && (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {active.map((p, i) => {
+            {deliverOrder.map((p, i) => {
               const queuedFailed = queuedParcels.get(p.id) === 'failed'
               // Attempt counter: server-confirmed attempts, +1 if one is queued
               const attempts = p.attempts + (queuedFailed ? 1 : 0)

@@ -28,6 +28,41 @@ export function fmtDistance(m: number): string {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`
 }
 
+/** Greedy nearest-neighbour ordering — turns a set of stops into a sensible
+ *  drive sequence instead of an arbitrary (e.g. tracking-number) order. Items
+ *  with no point sort to the end (can't be placed). Deterministic: starts from
+ *  the northernmost located item (westernmost tiebreak), then repeatedly hops to
+ *  the nearest unvisited. O(n²) — trivial for a driver's run (dozens of stops).
+ *  Not an optimal TSP, but it clusters nearby drops so the driver stops
+ *  crisscrossing the area. */
+export function orderByProximity<T>(
+  items: T[],
+  getPoint: (t: T) => { lat: number; lng: number } | null,
+): T[] {
+  const located = items
+    .map((it) => ({ it, pt: getPoint(it) }))
+    .filter((x): x is { it: T; pt: { lat: number; lng: number } } => x.pt != null)
+  const unlocated = items.filter((it) => getPoint(it) == null)
+  if (located.length <= 2) return [...located.map((x) => x.it), ...unlocated]
+  located.sort((a, b) => b.pt.lat - a.pt.lat || a.pt.lng - b.pt.lng) // deterministic start
+  const remaining = located.slice()
+  const ordered = [remaining.shift()!]
+  while (remaining.length) {
+    const last = ordered[ordered.length - 1].pt
+    let bestI = 0
+    let bestD = Infinity
+    for (let i = 0; i < remaining.length; i++) {
+      const d = haversineM(last, remaining[i].pt)
+      if (d < bestD) {
+        bestD = d
+        bestI = i
+      }
+    }
+    ordered.push(remaining.splice(bestI, 1)[0])
+  }
+  return [...ordered.map((x) => x.it), ...unlocated]
+}
+
 export function parseEwkbPoint(hex: unknown): { lat: number; lng: number } | null {
   if (typeof hex !== 'string' || hex.length < 50 || !hex.startsWith('01')) return null
   try {
