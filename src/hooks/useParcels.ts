@@ -12,9 +12,16 @@ export function useParcels() {
   const hasData = useRef(false)
 
   const reload = useCallback(async () => {
+    // The run is date-bounded: today's stops plus any un-cleared rollovers
+    // (due_date < today). Future-dated runs — e.g. a recurring schedule that
+    // pre-generates upcoming MON/WED/FRI days — belong to the dispatcher's view,
+    // not a driver's run, so they're excluded here (local device date).
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
     const { data, error } = await supabase
       .from('parcels')
       .select('*')
+      .lte('due_date', today)
       // Oldest due first → rollovers lead the run, then today's stops
       .order('due_date', { ascending: true })
       .order('tracking_number')
