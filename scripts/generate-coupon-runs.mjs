@@ -1,5 +1,5 @@
-// Phase 3 — RECURRING coupon runs. The coupon service runs Mon–Fri (confirmed
-// 2026-07-09); rather than re-import or re-allocate each day, this regenerates
+// Phase 3 — RECURRING coupon runs. The coupon service runs MON/WED/FRI (per the
+// 8 Jul brief); rather than re-import or re-allocate each day, this regenerates
 // the run as a fresh batch of dated parcels — the "auto-refresh daily" ask from
 // the 8 Jul demo.
 //
@@ -8,7 +8,7 @@
 // per shop. So it depends on no external file and can run unattended.
 //
 //   node scripts/generate-coupon-runs.mjs <URL> <SERVICE_KEY|ANON_KEY>
-//   env: DAYS=5 (how many upcoming service days), WEEKDAYS=1,2,3,4,5 (ISO Mon..Sun),
+//   env: DAYS=3 (how many upcoming service days), WEEKDAYS=1,3,5 (ISO Mon..Sun),
 //        FROM=YYYY-MM-DD (default today), SEED_STATUS=awaiting_collection
 //
 // Idempotent: only MISSING parcels are inserted (ON CONFLICT DO NOTHING), so a
@@ -23,8 +23,8 @@ import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 
 const positionals = process.argv.slice(2).filter((a) => !a.startsWith('--'))
-const DAYS = Number(process.env.DAYS || 5)
-const WEEKDAYS = (process.env.WEEKDAYS || '1,2,3,4,5').split(',').map(Number) // ISO 1=Mon..7=Sun (coupons run Mon–Fri)
+const DAYS = Number(process.env.DAYS || 3)
+const WEEKDAYS = (process.env.WEEKDAYS || '1,3,5').split(',').map(Number) // ISO 1=Mon..7=Sun (coupons = MON/WED/FRI per the brief)
 const FROM = process.env.FROM || new Date().toISOString().slice(0, 10)
 const SEED_STATUS = process.env.SEED_STATUS || 'awaiting_collection' // full collect→warehouse→deliver lifecycle
 

@@ -1,4 +1,4 @@
--- Phase 3 auto-scheduling: regenerate the coupon Mon–Fri runs UNATTENDED.
+-- Phase 3 auto-scheduling: regenerate the coupon MON/WED/FRI runs UNATTENDED.
 -- A Postgres function (the SQL port of the verified scripts/generate-coupon-runs.mjs)
 -- scheduled daily with pg_cron. The stop template is read back from existing
 -- coupon parcels (meta.source = 'coupon-pilot'), deduped to one stop per shop
@@ -12,8 +12,8 @@
 
 -- ── 1) generator function ────────────────────────────────────────────────────
 create or replace function public.generate_coupon_runs(
-  p_days        int   default 5,                     -- upcoming service days to ensure exist
-  p_weekdays    int[] default array[1, 2, 3, 4, 5],  -- ISO dow: 1=Mon .. 7=Sun (coupons run Mon–Fri)
+  p_days        int   default 3,                     -- upcoming service days to ensure exist
+  p_weekdays    int[] default array[1, 3, 5],        -- ISO dow: 1=Mon .. 7=Sun (coupons = MON/WED/FRI)
   p_seed_status text  default 'awaiting_collection'  -- full collect→warehouse→deliver lifecycle
 ) returns int
 language plpgsql
