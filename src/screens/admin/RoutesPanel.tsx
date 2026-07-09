@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { isForeignKeyError } from '../../lib/admin'
+import { postcodeAreaName } from '../../lib/postcodeAreas'
 import { supabase } from '../../lib/supabase'
 import type { Driver, Route } from '../../lib/types'
 import { Banner, BTN_DANGER, BTN_GHOST, BTN_PRIMARY, Card, Field, INPUT, Pill } from './ui'
@@ -217,7 +218,7 @@ function RouteRow({
         <div className="mt-1 flex flex-wrap gap-1.5">
           {hasAreas && (
             <span className="rounded-full bg-paper px-2 py-0.5 font-mono text-[11px] tracking-[0.5px] text-muted">
-              {route.collection_areas.join('·') || '—'} → {route.delivery_areas.join('·') || '—'}
+              <AreaCodes codes={route.collection_areas} /> → <AreaCodes codes={route.delivery_areas} />
             </span>
           )}
           {!fullyConfigured && (
@@ -237,6 +238,27 @@ function RouteRow({
   )
 }
 
+/** Render postcode-area codes with the full post-town name on hover (title),
+ *  joined by "·"; "—" when empty. A dotted underline hints they're hoverable. */
+function AreaCodes({ codes }: { codes: string[] }) {
+  if (codes.length === 0) return <>—</>
+  return (
+    <>
+      {codes.map((c, i) => (
+        <span key={c}>
+          <span
+            title={postcodeAreaName(c)}
+            className="cursor-help underline decoration-dotted decoration-muted/50 underline-offset-2"
+          >
+            {c}
+          </span>
+          {i < codes.length - 1 && <span className="text-muted/50">·</span>}
+        </span>
+      ))}
+    </>
+  )
+}
+
 /** Tag-style picker: the present postcode-areas as toggles, plus free entry
  *  (upper-cased) for any area not yet seen in the parcel set. */
 function AreaPicker({ label, options, selected, onChange }: {
@@ -251,7 +273,7 @@ function AreaPicker({ label, options, selected, onChange }: {
       <p className="section-label mb-1.5">{label}</p>
       <div className="flex flex-wrap gap-1.5">
         {all.map((a) => (
-          <button key={a} type="button" onClick={() => toggle(a)}
+          <button key={a} type="button" onClick={() => toggle(a)} title={postcodeAreaName(a)}
             className={`rounded-full border px-2.5 py-1 text-[12px] font-semibold transition ${
               selected.includes(a) ? 'border-navy-500/50 bg-navy-500/10 text-ink' : 'border-line text-muted hover:border-navy-500/30'}`}>
             {a}
