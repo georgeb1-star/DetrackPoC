@@ -190,34 +190,37 @@ export function buildDrafts(
   rows: ManifestRow[],
   opts: { date: string; geo: Map<string, { lng: number; lat: number }>; routeByName: Map<string, string> },
 ): { drafts: ManifestDraft[]; misses: string[] } {
-  const yymmdd = opts.date.slice(2).replace(/-/g, '')
   const misses: string[] = []
   const drafts = rows.map((r) => {
-    const customer = col(r, 'Customer')
+    const customer = col(r, 'CustomerName', 'Customer')
     const shop = col(r, 'Shop', 'Shop No', 'Store')
-    const branch = col(r, 'Branch (route)', 'Branch', 'Route').toUpperCase()
+    const branch = col(r, 'RouteName', 'Branch (route)', 'Branch', 'Route').toUpperCase()
     const postcode = col(r, 'PostCode', 'Postcode', 'Post Code') || null
     const address = col(r, 'Address1', 'Address', 'Address Line 1')
-    const explicitTn = col(r, 'Tracking', 'Tracking Number', 'Barcode')
+    // The real Citipost feed carries CarrierBarcode (the label ID the driver
+    // scans) and Inshopdate (the run date). Fall back to an interim CPN code +
+    // the chosen run date only when the sheet has neither.
+    const barcode = col(r, 'CarrierBarcode', 'Barcode', 'Tracking Number', 'Tracking')
+    const due = col(r, 'Inshopdate', 'In-shop date', 'Date') || opts.date
     const cust = CUST_CODE[customer.toUpperCase()] || (customer ? customer.slice(0, 3).toUpperCase() : 'OTH')
     const pcKey = (postcode ?? '').trim().toUpperCase()
     const fix = opts.geo.get(pcKey)
     if (!fix && postcode) misses.push(`${customer || shop} (${postcode})`)
     return {
-      tracking_number: explicitTn || `CPN-${cust}-${shop || 'X'}-${yymmdd}`,
+      tracking_number: barcode || `CPN-${cust}-${shop || 'X'}-${due.slice(2).replace(/-/g, '')}`,
       recipient_name: customer ? `${customer}${shop ? ` (${shop})` : ''}` : (col(r, 'Name', 'Recipient') || 'Recipient'),
       address_line: address,
       postcode,
       destination: fix ? `SRID=4326;POINT(${fix.lng} ${fix.lat})` : null,
       delivery_area: postcodeArea(postcode),
       collection_area: postcodeArea(postcode),
-      status: 'at_warehouse',
-      due_date: opts.date,
+      status: 'awaiting_collection',
+      due_date: due,
       route_id: opts.routeByName.get(branch.toLowerCase()) ?? null,
       branch,
       meta: {
-        source: 'manifest-import', shop, customer, branch,
-        ventra_id: col(r, 'ID'), drop_code: col(r, 'DropCode', 'Drop Code'), carrier: col(r, 'Carrier'),
+        source: 'coupon', shop, customer, branch, address_id: col(r, 'AddressID', 'ID'),
+        drop_code: col(r, 'DropCode', 'Drop Code'), carrier: col(r, 'Carrier'),
       },
     }
   })
