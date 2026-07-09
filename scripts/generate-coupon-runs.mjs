@@ -1,15 +1,15 @@
-// Phase 3 — RECURRING coupon runs. The coupon service repeats on a weekday
-// schedule (MON/WED/FRI); rather than re-import or re-allocate each day, this
-// regenerates the run as a fresh batch of dated parcels — the "auto-refresh
-// daily" ask from the 8 Jul demo.
+// Phase 3 — RECURRING coupon runs. The coupon service runs Mon–Fri (confirmed
+// 2026-07-09); rather than re-import or re-allocate each day, this regenerates
+// the run as a fresh batch of dated parcels — the "auto-refresh daily" ask from
+// the 8 Jul demo.
 //
 // It is SELF-CONTAINED: the template (the shop list) is read back from the
 // parcels already in the DB (meta.source = 'coupon-pilot'), deduped to one stop
 // per shop. So it depends on no external file and can run unattended.
 //
 //   node scripts/generate-coupon-runs.mjs <URL> <SERVICE_KEY|ANON_KEY>
-//   env: DAYS=3 (how many upcoming service days), WEEKDAYS=1,3,5 (ISO Mon..Sun),
-//        FROM=YYYY-MM-DD (default today), SEED_STATUS=at_warehouse
+//   env: DAYS=5 (how many upcoming service days), WEEKDAYS=1,2,3,4,5 (ISO Mon..Sun),
+//        FROM=YYYY-MM-DD (default today), SEED_STATUS=awaiting_collection
 //
 // Idempotent: only MISSING parcels are inserted (ON CONFLICT DO NOTHING), so a
 // day already generated — or a run partway through delivery — is never touched.
@@ -23,10 +23,10 @@ import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 
 const positionals = process.argv.slice(2).filter((a) => !a.startsWith('--'))
-const DAYS = Number(process.env.DAYS || 3)
-const WEEKDAYS = (process.env.WEEKDAYS || '1,3,5').split(',').map(Number) // ISO 1=Mon..7=Sun
+const DAYS = Number(process.env.DAYS || 5)
+const WEEKDAYS = (process.env.WEEKDAYS || '1,2,3,4,5').split(',').map(Number) // ISO 1=Mon..7=Sun (coupons run Mon–Fri)
 const FROM = process.env.FROM || new Date().toISOString().slice(0, 10)
-const SEED_STATUS = process.env.SEED_STATUS || 'at_warehouse'
+const SEED_STATUS = process.env.SEED_STATUS || 'awaiting_collection' // full collect→warehouse→deliver lifecycle
 
 /** The next `count` dates on/after `fromISO` whose ISO weekday is in `weekdays`. */
 function serviceDates(fromISO, weekdays, count) {

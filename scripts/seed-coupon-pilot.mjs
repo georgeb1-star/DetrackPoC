@@ -48,10 +48,10 @@ const XLSX_PATH = fileArg || process.env.COUPON_XLSX
 const RUN_DATE = process.env.RUN_DATE || new Date().toISOString().slice(0, 10) // yyyy-mm-dd
 const YYMMDD = RUN_DATE.slice(2).replace(/-/g, '')
 
-// Seed status. 'at_warehouse' = a delivery-only run: packs are loaded, the
-// driver's next scan is the delivery. Switch to 'awaiting_collection' to walk
-// the full collect -> warehouse -> deliver lifecycle instead.
-const SEED_STATUS = process.env.SEED_STATUS || 'at_warehouse'
+// Seed status. Confirmed 2026-07-09: coupon packs are scanned at EACH stage,
+// so runs start at 'awaiting_collection' and walk the full collect -> warehouse
+// -> deliver lifecycle. (Set 'at_warehouse' for a delivery-only run.)
+const SEED_STATUS = process.env.SEED_STATUS || 'awaiting_collection'
 
 // Route + driver definitions, keyed on the sheet's Branch column.
 const CUST_CODE = { 'WILLIAM HILL': 'WH', LADBROKES: 'LAD', CORAL: 'COR' }
