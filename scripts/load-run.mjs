@@ -35,6 +35,16 @@ function csvRows(text) {
 
 const postcodeArea = (pc) => ((pc || '').trim().toUpperCase().match(/^[A-Z]{1,2}/) ?? [''])[0]
 
+// The feed's column order (used when a file arrives WITHOUT a header row).
+const CANON = ['Shop', 'CustomerName', 'Address1', 'PostCode', 'AddressID', 'Carrier', 'RouteName', 'DropCode', 'CarrierBarcode', 'Inshopdate']
+
+/** Normalise a date to YYYY-MM-DD (accepts DD/MM/YYYY and ISO). */
+const isoDate = (s) => {
+  s = (s || '').trim()
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : s
+}
+
 async function geocode(pcs) {
   const uniq = [...new Set(pcs.map((p) => p.trim().toUpperCase()).filter(Boolean))]
   const out = new Map()
@@ -52,11 +62,25 @@ async function geocode(pcs) {
 
 async function main() {
   const arr = csvRows(readFileSync(RUN_CSV, 'utf8').replace(/^﻿/, '').trim())
-  const hdr = arr[0].map((h) => h.trim())
+  // Header row is optional — some exports omit it. Detect a header by known
+  // column names; otherwise assume the canonical column order.
+  const first = arr[0].map((h) => h.trim())
+  const hasHeader = first.some((h) => /^(Shop|CarrierBarcode|CustomerName|RouteName|Inshopdate)$/i.test(h))
+  const hdr = hasHeader ? first : CANON
   const idx = Object.fromEntries(hdr.map((h, i) => [h, i]))
-  const rows = arr.slice(1).filter((r) => r.some((c) => c.trim() !== ''))
+  const rows = (hasHeader ? arr.slice(1) : arr).filter((r) => r.some((c) => c.trim() !== ''))
   const get = (r, name) => (r[idx[name]] ?? '').trim()
-  console.log(`Parsed ${rows.length} rows from ${RUN_CSV}`)
+  console.log(`Parsed ${rows.length} rows from ${RUN_CSV} (${hasHeader ? 'with header' : 'no header — assumed canonical order'})`)
+
+  // Guard: barcodes must be plain digits. Excel silently turns a 17-digit
+  // barcode into scientific notation ("7.61007E+16") on a CSV round-trip, which
+  // destroys it — refuse rather than load junk that won't scan.
+  const bad = rows.map((r) => get(r, 'CarrierBarcode')).filter((b) => b && !/^\d{6,}$/.test(b))
+  if (bad.length) {
+    console.error(`ABORT: ${bad.length}/${rows.length} barcodes are not plain digits (e.g. "${bad[0]}"). The CarrierBarcode column looks Excel-corrupted (scientific notation) — re-export it with that column formatted as TEXT so the full 17 digits survive.`)
+    process.exitCode = 1
+    return
+  }
 
   const geo = await geocode(rows.map((r) => get(r, 'PostCode')))
 
@@ -76,7 +100,7 @@ async function main() {
   const { data: routes } = await db.from('routes').select('id,name')
   const routeByName = new Map((routes || []).map((r) => [r.name.toLowerCase(), r.id]))
 
-  const runDate = get(rows[0], 'Inshopdate')
+  const runDate = isoDate(get(rows[0], 'Inshopdate'))
   const name = `Coupons ${runDate}`
   let manifestId
   const { data: ex } = await db.from('manifests').select('id').eq('name', name).maybeSingle()
@@ -104,7 +128,7 @@ async function main() {
       delivery_area: postcodeArea(pc),
       collection_area: postcodeArea(pc),
       status: 'awaiting_collection',
-      due_date: get(r, 'Inshopdate') || runDate,
+      due_date: isoDate(get(r, 'Inshopdate')) || runDate,
       route_id: rid,
       manifest_id: manifestId,
       meta: {
