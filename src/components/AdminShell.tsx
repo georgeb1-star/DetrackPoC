@@ -1,4 +1,5 @@
 import { signOut } from '../hooks/useSession'
+import { ProfileMenu } from './ProfileMenu'
 
 /** Which dispatch section is active — drives the app-bar tab highlight. */
 export type AdminTab = 'allocate' | 'jobs' | 'sites' | 'pods' | 'collections' | 'reconcile' | 'admin'
@@ -62,9 +63,17 @@ export function AdminShell({
               </nav>
 
               <div className="ml-auto flex flex-none items-center gap-3 sm:ml-0">
-                <span className="hidden rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[1px] text-[#8e99ac] md:inline">
-                  Admin
-                </span>
+                <ProfileMenu triggerClassName="flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] py-1 pl-1 pr-1.5 text-[10.5px] font-bold uppercase tracking-[1px] text-[#8e99ac] transition hover:bg-white/10 hover:text-white sm:pr-2.5">
+                  <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-navy-500 text-white" aria-hidden>
+                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4.5 20a7.5 7.5 0 0 1 15 0" />
+                    </svg>
+                  </span>
+                  <span className="hidden sm:inline">Admin</span>
+                  <svg viewBox="0 0 24 24" className="hidden h-3.5 w-3.5 fill-none stroke-current sm:block" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </ProfileMenu>
                 <button
                   type="button"
                   onClick={() => void signOut()}

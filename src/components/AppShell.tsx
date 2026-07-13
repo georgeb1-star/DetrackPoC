@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { ProfileMenu } from './ProfileMenu'
 import { SyncBadge } from './SyncBadge'
 
 /** Responsive driver shell — a real product UI, not a device mockup.
@@ -25,15 +26,18 @@ export function AppShell({
 
         <div className="mt-8">
           <SidebarLabel>Signed in</SidebarLabel>
-          <div className="mt-2 flex items-center gap-2.5">
+          <ProfileMenu triggerClassName="mt-2 flex w-full items-center gap-2.5 rounded-xl px-1.5 py-1.5 text-left transition hover:bg-white/5">
             <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-navy-500 font-serif text-sm">
               {initial}
             </span>
-            <div className="leading-tight">
-              <div className="text-[13.5px] font-semibold">{name}</div>
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="truncate text-[13.5px] font-semibold">{name}</div>
               <div className="text-[11px] uppercase tracking-[1px] text-[#8e99ac]">Driver</div>
             </div>
-          </div>
+            <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none fill-none stroke-current text-[#8e99ac]" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </ProfileMenu>
         </div>
 
         <div className="mt-8">
@@ -64,9 +68,10 @@ export function AppShell({
         <div className="flex items-center justify-between gap-3 px-[18px] pb-2.5 text-[12px]">
           {/* min-w-0 so the name actually truncates instead of shoving the
               Log out button off the edge on a narrow phone. */}
-          <span className="min-w-0 truncate text-[#8e99ac]">
-            <span className="text-white/90">{name}</span> · Driver
-          </span>
+          <ProfileMenu triggerClassName="flex min-w-0 items-center gap-1 text-left text-[#8e99ac]">
+            <span className="truncate text-white/90 underline decoration-white/25 underline-offset-2">{name}</span>
+            <span className="flex-none">· Driver</span>
+          </ProfileMenu>
           <button
             type="button"
             onClick={onSignOut}

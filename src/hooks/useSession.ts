@@ -22,6 +22,11 @@ export interface SessionState {
   profileError: string | null
 }
 
+/** Dispatched by the self-service profile editor after a successful save, so
+ *  useSession re-reads the profile and the new name shows everywhere at once
+ *  (sidebar, menus) without a full page reload. */
+export const PROFILE_UPDATED_EVENT = 'profile-updated'
+
 /** Live auth state: the Supabase session plus the user's profile (role +
  *  driver_id). The session comes from `onAuthStateChange`; the profile is
  *  fetched whenever the user changes (RLS lets a user read only their own). */
@@ -55,28 +60,35 @@ export function useSession(): SessionState {
       return
     }
     let live = true
-    setProfileLoading(true)
-    void supabase
-      .from('profiles')
-      .select('id, role, driver_id, full_name')
-      .eq('id', userId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (!live) return
-        setProfileLoading(false)
-        if (error) {
-          setProfile(null)
-          setProfileError(error.message)
-        } else if (!data) {
-          setProfile(null)
-          setProfileError('This account has no profile yet — ask a dispatcher to set it up.')
-        } else {
-          setProfile({ id: data.id, role: data.role as Role, driverId: data.driver_id, fullName: data.full_name })
-          setProfileError(null)
-        }
-      })
+    const load = () => {
+      setProfileLoading(true)
+      void supabase
+        .from('profiles')
+        .select('id, role, driver_id, full_name')
+        .eq('id', userId)
+        .maybeSingle()
+        .then(({ data, error }) => {
+          if (!live) return
+          setProfileLoading(false)
+          if (error) {
+            setProfile(null)
+            setProfileError(error.message)
+          } else if (!data) {
+            setProfile(null)
+            setProfileError('This account has no profile yet — ask a dispatcher to set it up.')
+          } else {
+            setProfile({ id: data.id, role: data.role as Role, driverId: data.driver_id, fullName: data.full_name })
+            setProfileError(null)
+          }
+        })
+    }
+    load()
+    // Re-read after a self-service profile edit (name change).
+    const onUpdated = () => load()
+    window.addEventListener(PROFILE_UPDATED_EVENT, onUpdated)
     return () => {
       live = false
+      window.removeEventListener(PROFILE_UPDATED_EVENT, onUpdated)
     }
   }, [userId])
 
