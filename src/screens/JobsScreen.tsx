@@ -18,6 +18,7 @@ interface JobParcel {
   postcode: string | null
   delivery_area: string
   status: string
+  due_date: string
   route_id: string | null
   manifest_id: string | null
 }
@@ -39,7 +40,7 @@ export function JobsScreen() {
       supabase.from('manifests').select('*').order('imported_at', { ascending: false }),
       supabase
         .from('parcels')
-        .select('id, tracking_number, recipient_name, address_line, postcode, delivery_area, status, route_id, manifest_id')
+        .select('id, tracking_number, recipient_name, address_line, postcode, delivery_area, status, due_date, route_id, manifest_id')
         .order('tracking_number'),
     ])
     if (mRes.error) {
@@ -183,6 +184,42 @@ async function commitManifestImport(name: string, sourceFilename: string, drafts
   }))
   const { error } = await supabase.from('parcels').upsert(rows, { onConflict: 'tracking_number' })
   if (error) throw new Error(error.message)
+}
+
+const POD_SELECT =
+  'tracking_scanned,status,failure_reason,received_by,captured_at,location, parcel:parcels(tracking_number,delivery_area,postcode,manifest_id), site:sites(name,postcode)'
+const EVENT_SELECT =
+  'tracking_scanned,stage,captured_at,location, parcel:parcels(tracking_number,delivery_area,postcode,manifest_id)'
+const LIFECYCLE_SCANS = ['collection', 'warehouse']
+
+/** Fetch tracking rows (PODs + collection/warehouse scans) for the export.
+ *  ids null → every row (export all); ids present → chunked .in('parcel_id')
+ *  batches so a big job can't blow the request URL. Order is irrelevant —
+ *  buildTrackingCsv sorts the merged rows chronologically. */
+async function fetchTracking(
+  ids: string[] | null,
+): Promise<{ podRows: unknown[]; evRows: unknown[]; error: { message: string } | null }> {
+  if (!ids) {
+    const [podRes, evRes] = await Promise.all([
+      supabase.from('pod_records').select(POD_SELECT),
+      supabase.from('parcel_events').select(EVENT_SELECT).in('stage', LIFECYCLE_SCANS),
+    ])
+    return { podRows: podRes.data ?? [], evRows: evRes.data ?? [], error: podRes.error ?? evRes.error }
+  }
+  const CHUNK = 200
+  const batches: string[][] = []
+  for (let i = 0; i < ids.length; i += CHUNK) batches.push(ids.slice(i, i + CHUNK))
+  const results = await Promise.all(
+    batches.flatMap((b) => [
+      supabase.from('pod_records').select(POD_SELECT).in('parcel_id', b),
+      supabase.from('parcel_events').select(EVENT_SELECT).in('parcel_id', b).in('stage', LIFECYCLE_SCANS),
+    ]),
+  )
+  const error = results.find((r) => r.error)?.error ?? null
+  // Even indexes are pod batches, odd are event batches (see flatMap order).
+  const podRows = results.filter((_, i) => i % 2 === 0).flatMap((r) => (r.data ?? []) as unknown[])
+  const evRows = results.filter((_, i) => i % 2 === 1).flatMap((r) => (r.data ?? []) as unknown[])
+  return { podRows, evRows, error }
 }
 
 /** Upload a coupon-style CSV/.xlsx → parse + geocode in the browser → preview →
@@ -439,26 +476,25 @@ function JobsList({
     setExporting(job?.id ?? 'all')
     setNote(null)
     onError(null)
+
     // The full journey: POD outcomes (delivered/attempted) + the
     // collection/warehouse lifecycle scans, merged chronologically by
-    // buildTrackingCsv. The delivered stage isn't fetched from
-    // parcel_events — its POD row already carries it.
-    const [podRes, evRes] = await Promise.all([
-      supabase
-        .from('pod_records')
-        .select(
-          'tracking_scanned,status,failure_reason,received_by,captured_at,location, parcel:parcels(tracking_number,delivery_area,postcode,manifest_id), site:sites(name,postcode)',
-        )
-        .order('captured_at', { ascending: true }),
-      supabase
-        .from('parcel_events')
-        .select(
-          'tracking_scanned,stage,captured_at,location, parcel:parcels(tracking_number,delivery_area,postcode,manifest_id)',
-        )
-        .in('stage', ['collection', 'warehouse'])
-        .order('captured_at', { ascending: true }),
-    ])
-    const error = podRes.error ?? evRes.error
+    // buildTrackingCsv. The delivered stage isn't fetched from parcel_events —
+    // its POD row already carries it.
+    //
+    // A single-job export is scoped to that job's parcels SERVER-SIDE (was:
+    // fetch every pod/event, filter in the browser). The ids come from the
+    // already-loaded manifest grouping — no extra round-trip — and fetchTracking
+    // chunks them into .in('parcel_id') batches so a big job can't blow the URL.
+    // Site captures have no parcel, so they only surface in "export all".
+    const parcelIds = job ? (byManifest.get(job.id) ?? []).map((p) => p.id) : null
+    if (job && (parcelIds?.length ?? 0) === 0) {
+      setNote(`No parcels on “${job.name}” yet.`)
+      setExporting(null)
+      return
+    }
+
+    const { podRows, evRows, error } = await fetchTracking(parcelIds)
     if (error) {
       onError(error.message)
       setExporting(null)
@@ -482,35 +518,31 @@ function JobsList({
       location: unknown
       parcel: ParcelCtx
     }
-    const pods: TrackingPod[] = (podRes.data as unknown as Row[])
-      .filter((r) => !job || r.parcel?.manifest_id === job.id)
-      .map((r) => ({
-        parcel_tracking: r.parcel?.tracking_number ?? null,
-        tracking_scanned: r.tracking_scanned,
-        status: r.status,
-        failure_reason: r.failure_reason,
-        received_by: r.received_by,
-        captured_at: r.captured_at,
-        location: r.location,
-        area: r.parcel?.delivery_area ?? null,
-        postcode: r.parcel?.postcode ?? null,
-        siteName: r.site?.name ?? null,
-        sitePostcode: r.site?.postcode ?? null,
-      }))
-    const scans: TrackingScan[] = (evRes.data as unknown as EventRow[])
-      .filter((r) => !job || r.parcel?.manifest_id === job.id)
-      .map((r) => ({
-        parcel_tracking: r.parcel?.tracking_number ?? null,
-        tracking_scanned: r.tracking_scanned,
-        stage: r.stage,
-        captured_at: r.captured_at,
-        location: r.location,
-        area: r.parcel?.delivery_area ?? null,
-        postcode: r.parcel?.postcode ?? null,
-      }))
+    const pods: TrackingPod[] = (podRows as unknown as Row[]).map((r) => ({
+      parcel_tracking: r.parcel?.tracking_number ?? null,
+      tracking_scanned: r.tracking_scanned,
+      status: r.status,
+      failure_reason: r.failure_reason,
+      received_by: r.received_by,
+      captured_at: r.captured_at,
+      location: r.location,
+      area: r.parcel?.delivery_area ?? null,
+      postcode: r.parcel?.postcode ?? null,
+      siteName: r.site?.name ?? null,
+      sitePostcode: r.site?.postcode ?? null,
+    }))
+    const scans: TrackingScan[] = (evRows as unknown as EventRow[]).map((r) => ({
+      parcel_tracking: r.parcel?.tracking_number ?? null,
+      tracking_scanned: r.tracking_scanned,
+      stage: r.stage,
+      captured_at: r.captured_at,
+      location: r.location,
+      area: r.parcel?.delivery_area ?? null,
+      postcode: r.parcel?.postcode ?? null,
+    }))
 
     if (pods.length === 0 && scans.length === 0) {
-      setNote(`No tracking events captured yet${job ? ` for "${job.name}"` : ''}.`)
+      setNote(`No tracking events captured yet${job ? ` for “${job.name}”` : ''}.`)
       setExporting(null)
       return
     }
@@ -524,7 +556,7 @@ function JobsList({
     <section>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <p className="section-label flex-none">Jobs</p>
-        {manifests && manifests.length > PAGE_SIZE && (
+        {manifests && manifests.length > 0 && (
           <input
             value={query}
             onChange={(e) => {
@@ -561,6 +593,8 @@ function JobsList({
         {shown.map((job) => {
           const stops = byManifest.get(job.id) ?? []
           const delivered = stops.filter((p) => p.status === 'delivered').length
+          const unallocated = stops.filter((p) => p.route_id == null).length
+          const runLabel = runDateLabel(stops)
           const open = openId === job.id
           return (
             <article key={job.id} className="overflow-hidden rounded-2xl border border-line bg-white">
@@ -573,10 +607,17 @@ function JobsList({
                 >
                   <Chevron open={open} />
                   <span className="min-w-0">
-                    <span className="block font-serif text-[15px] text-ink">{job.name}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="min-w-0 truncate font-serif text-[15px] text-ink">{job.name}</span>
+                      {unallocated > 0 && (
+                        <span className="flex-none rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] text-gold">
+                          {unallocated} unallocated
+                        </span>
+                      )}
+                    </span>
                     <span className="block text-[12px] text-muted">
-                      {fmtDate(job.imported_at)} · {stops.length} parcel{stops.length === 1 ? '' : 's'} · {delivered}{' '}
-                      delivered
+                      {runLabel ? `Run ${runLabel} · ` : ''}imported {fmtDate(job.imported_at)} · {stops.length} parcel
+                      {stops.length === 1 ? '' : 's'} · {delivered} delivered
                     </span>
                   </span>
                 </button>
@@ -652,17 +693,23 @@ function JobParcels({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(0)
 
-  // Parcels can disappear/refresh under us (realtime) — keep the selection valid.
-  const validIds = useMemo(() => new Set(parcels.map((p) => p.id)), [parcels])
-  const picked = useMemo(() => [...selected].filter((id) => validIds.has(id)), [selected, validIds])
+  // Only awaiting_collection parcels can be (re)assigned — once collected or
+  // beyond, a parcel is in flight on a driver's run and its route is locked.
+  // This set doubles as the realtime-safe validity check (locked ⊂ present).
+  const selectableIds = useMemo(
+    () => new Set(parcels.filter((p) => p.status === 'awaiting_collection').map((p) => p.id)),
+    [parcels],
+  )
+  const picked = useMemo(() => [...selected].filter((id) => selectableIds.has(id)), [selected, selectableIds])
 
-  const allOn = parcels.length > 0 && picked.length === parcels.length
+  const allOn = selectableIds.size > 0 && picked.length === selectableIds.size
   // Page the rows (a job can hold 64+ parcels); select-all still spans them all.
   const PAGE_SIZE = 12
   const pageCount = Math.max(1, Math.ceil(parcels.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
   const shown = parcels.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
   function toggle(id: string) {
+    if (!selectableIds.has(id)) return
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -671,7 +718,7 @@ function JobParcels({
     })
   }
   function toggleAll() {
-    setSelected(allOn ? new Set() : new Set(parcels.map((p) => p.id)))
+    setSelected(allOn ? new Set() : new Set(selectableIds))
   }
 
   function assign(value: string) {
@@ -688,9 +735,23 @@ function JobParcels({
     <div className="border-t border-line">
       {/* Select-all + bulk assign bar */}
       <div className="flex flex-wrap items-center justify-between gap-2 bg-paper/50 px-4 py-2">
-        <label className="flex items-center gap-2 text-[12.5px] font-semibold text-ink">
-          <input type="checkbox" checked={allOn} onChange={toggleAll} className="h-4 w-4 accent-navy" />
-          {picked.length > 0 ? `${picked.length} selected` : 'Select all'}
+        <label
+          className={`flex items-center gap-2 text-[12.5px] font-semibold ${
+            selectableIds.size === 0 ? 'text-muted' : 'text-ink'
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={allOn}
+            disabled={selectableIds.size === 0}
+            onChange={toggleAll}
+            className="h-4 w-4 accent-navy disabled:opacity-40"
+          />
+          {picked.length > 0
+            ? `${picked.length} selected`
+            : selectableIds.size === 0
+              ? 'All parcels in flight'
+              : 'Select all'}
         </label>
         <div className="flex items-center gap-2">
           <select
@@ -715,15 +776,31 @@ function JobParcels({
       <div className="flex flex-col">
         {shown.map((p) => {
           const on = picked.includes(p.id)
+          const locked = p.status !== 'awaiting_collection'
           const rName = routeName(p.route_id)
           return (
             <label
               key={p.id}
-              className={`flex cursor-pointer items-center gap-3 border-t border-line px-4 py-2.5 transition ${
-                on ? 'bg-navy-500/5' : 'hover:bg-paper/50'
+              title={
+                locked
+                  ? `${STATUS_LABEL[p.status as ParcelStatus] ?? p.status} — locked, can't be reassigned`
+                  : undefined
+              }
+              className={`flex items-center gap-3 border-t border-line px-4 py-2.5 transition ${
+                locked
+                  ? 'cursor-default opacity-60'
+                  : on
+                    ? 'cursor-pointer bg-navy-500/5'
+                    : 'cursor-pointer hover:bg-paper/50'
               }`}
             >
-              <input type="checkbox" checked={on} onChange={() => toggle(p.id)} className="h-4 w-4 flex-none accent-navy" />
+              <input
+                type="checkbox"
+                checked={on}
+                disabled={locked}
+                onChange={() => toggle(p.id)}
+                className="h-4 w-4 flex-none accent-navy disabled:opacity-40"
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-[13.5px] font-semibold text-ink">{p.recipient_name}</span>
@@ -813,6 +890,23 @@ function fmtDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+/** A run date (YYYY-MM-DD) as "13 Jul", parsed as local midnight so UK dates
+ *  don't slip a day. */
+function fmtRunDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+}
+
+/** The run(s) a job's parcels belong to (due_date). One date for a normal
+ *  import; a "+N more" tail if a job somehow spans several runs. */
+function runDateLabel(stops: { due_date: string }[]): string | null {
+  const dates = [...new Set(stops.map((p) => p.due_date).filter(Boolean))].sort()
+  if (dates.length === 0) return null
+  if (dates.length === 1) return fmtRunDate(dates[0])
+  return `${fmtRunDate(dates[0])} +${dates.length - 1} more`
 }
 
 function Chevron({ open }: { open: boolean }) {
