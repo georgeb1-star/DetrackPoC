@@ -6,14 +6,23 @@ export function TopBar({
   title,
   mono,
   onBack,
+  insetTop = false,
 }: {
   eyebrow: string
   title: string
   mono?: string
   onBack?: () => void
+  /** True when this bar is the very top of the viewport (a screen rendered
+   *  outside AppShell), so it pads for the notch. Left false inside the shell,
+   *  where AppShell's navy bar already owns the safe-area inset. */
+  insetTop?: boolean
 }) {
   return (
-    <div className="relative border-b border-line bg-white px-[18px] py-4 lg:px-8">
+    <div
+      className={`relative border-b border-line bg-white px-[18px] pb-4 lg:px-8 ${
+        insetTop ? 'pt-[max(16px,env(safe-area-inset-top))]' : 'pt-4'
+      }`}
+    >
       {onBack && (
         <button
           type="button"

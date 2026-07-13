@@ -56,11 +56,15 @@ export function AppShell({
       {/* Mobile/tablet top bar */}
       <header className="gold-underline sticky top-0 z-30 bg-navy text-white lg:hidden">
         <div className="flex items-center justify-between gap-3 px-[18px] pb-2 pt-[max(10px,env(safe-area-inset-top))]">
-          <Brand />
+          <span className="flex-none">
+            <Brand />
+          </span>
           <SyncBadge />
         </div>
         <div className="flex items-center justify-between gap-3 px-[18px] pb-2.5 text-[12px]">
-          <span className="truncate text-[#8e99ac]">
+          {/* min-w-0 so the name actually truncates instead of shoving the
+              Log out button off the edge on a narrow phone. */}
+          <span className="min-w-0 truncate text-[#8e99ac]">
             <span className="text-white/90">{name}</span> · Driver
           </span>
           <button

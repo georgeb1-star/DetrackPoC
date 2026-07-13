@@ -12,7 +12,11 @@ export function SyncBadge() {
       type="button"
       onClick={() => void syncNow({ includeStuck: true })}
       title={stuck > 0 ? 'Some items need a manual retry — tap to retry now' : 'Tap to sync now'}
-      className="flex flex-none items-center gap-1.5 rounded-full border border-white/15 bg-navy-600 px-2.5 py-[5px] text-[10px] font-bold uppercase tracking-[0.6px]"
+      // Wrap-safe, shrinkable: on a phone the mobile top bar is tight and the
+      // "N synced" count climbs into the hundreds on a coupon run — flex-wrap +
+      // min-w-0 lets the badge stack to a second line instead of pushing off
+      // the screen edge. Roomy in the desktop sidebar, so it stays one line there.
+      className="flex min-w-0 max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-2xl border border-white/15 bg-navy-600 px-2.5 py-[5px] text-[10px] font-bold uppercase tracking-[0.6px]"
     >
       {!online && (
         <>

@@ -265,8 +265,8 @@ export function StopsScreen({
                   <ul className="mt-2 flex flex-col gap-1 text-[12.5px] text-muted">
                     {g.parcels.map((p) => (
                       <li key={p.id} className="flex items-center justify-between gap-2">
-                        <span className="truncate">{p.recipient_name} · {p.delivery_area || '?'}</span>
-                        <span className="font-mono text-[11px] text-navy-500">{p.tracking_number}</span>
+                        <span className="min-w-0 truncate">{p.recipient_name} · {p.delivery_area || '?'}</span>
+                        <span className="flex-none font-mono text-[11px] text-navy-500">{p.tracking_number}</span>
                       </li>
                     ))}
                   </ul>
@@ -373,7 +373,7 @@ export function StopsScreen({
                     className="flex h-full w-full flex-col rounded-2xl border border-line bg-white p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="text-[15px] font-semibold">{s.name}</div>
+                      <div className="min-w-0 truncate text-[15px] font-semibold">{s.name}</div>
                       <span className="flex-none rounded-full border border-navy-500/30 bg-navy-500/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] text-navy-500">
                         {s.kind === 'both' ? 'Store · Depot' : s.kind}
                       </span>
@@ -719,7 +719,7 @@ function StopRow({
       className={`flex h-full w-full flex-col rounded-2xl border border-line bg-white p-4 text-left transition hover:border-navy-500/40 hover:shadow-[0_6px_20px_-10px_rgba(16,25,46,.35)] active:translate-y-px ${dim ? 'opacity-70' : ''}`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="text-[15px] font-semibold">{p.recipient_name}</div>
+        <div className="min-w-0 break-words text-[15px] font-semibold">{p.recipient_name}</div>
         <span className="flex-none">{children}</span>
       </div>
       <div className="mt-1 text-[13px] leading-[1.45] text-muted">
@@ -727,7 +727,9 @@ function StopRow({
         {p.postcode ? `, ${p.postcode}` : ''}
       </div>
       {note && <div className="mt-1 text-[11.5px] font-semibold text-fail">{note}</div>}
-      <div className="mt-auto flex items-center justify-between gap-2 pt-3">
+      {/* flex-wrap so a long status pill + area drop below the tracking number
+          on a narrow card instead of overflowing off the right edge. */}
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 pt-3">
         <span className="font-mono text-[11px] tracking-[1px] text-navy-500">{p.tracking_number}</span>
         <span className="flex items-center gap-1.5">
           {stagePill}

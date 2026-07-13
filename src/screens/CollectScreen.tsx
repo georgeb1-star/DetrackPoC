@@ -75,6 +75,7 @@ export function CollectScreen({
         title={site.name}
         mono={`${items.length} collected`}
         onBack={onBack}
+        insetTop
       />
 
       <div className="mx-auto w-full max-w-2xl px-4 py-5 lg:px-8 lg:py-7">

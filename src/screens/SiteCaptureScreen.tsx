@@ -135,6 +135,7 @@ export function SiteCaptureScreen({
         title={site.name}
         mono={`${count} item${count === 1 ? '' : 's'} captured`}
         onBack={onBack}
+        insetTop
       />
 
       <div className="mx-auto w-full max-w-2xl px-4 py-5 lg:px-8 lg:py-7">
