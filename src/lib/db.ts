@@ -58,17 +58,24 @@ export interface QueuedEvent {
   lastError: string | null
 }
 
-/** An ad-hoc collection scan in the local queue: a driver at a depot scans an
- *  item that was never pre-alerted, so there's no parcel to match. On sync the
+/** An ad-hoc collection scan in the local queue: a driver scans an item that
+ *  was never pre-alerted, so there's no parcel to match. On sync the
  *  create_adhoc_parcel RPC turns each into a first-class parcel at 'collected'.
+ *  Two ways in: at a DEPOT (siteId set — the RPC derives the route from it), or
+ *  straight off the run's Scan-label sheet (routeId set — an unknown barcode
+ *  scanned in Collect mode). One of siteId / routeId identifies the route; if
+ *  both are null the RPC falls back to the driver's own single route.
  *  Same local-first rules as QueuedEvent — queued offline, drained by the sync
  *  worker, kept (flag flipped) as history. */
 export interface QueuedAdhocScan {
   /** Client UUID — idempotency key; also becomes the parcel + collection event id */
   scanId: string
   trackingScanned: string
-  siteId: string
-  siteName: string
+  /** Depot the item was collected at (depot path). Unindexed — safe to omit. */
+  siteId?: string | null
+  siteName?: string | null
+  /** Route the ad-hoc parcel joins (Scan-label path). Unindexed — safe to omit. */
+  routeId?: string | null
   capturedAt: string // ISO, device clock at the scan
   location: Fix | null
   driverId?: string
