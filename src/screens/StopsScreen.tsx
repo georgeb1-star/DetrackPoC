@@ -851,6 +851,17 @@ function ScanSheet({
             <div className="mt-2.5 rounded-[11px] border border-fail/40 bg-fail/10 px-3 py-2.5 text-[13px] text-fail">
               <span className="font-bold">Unknown parcel.</span> No stop matches{' '}
               <span className="font-mono">{unknown}</span> — check the label or pick from the list.
+              {/* This label isn't on the run — if the driver is collecting it,
+                  one tap flips the stage to Collect and the pick-up offer shows. */}
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => setMode('collection')}
+                  className="rounded-[9px] border border-navy-500/40 bg-white px-2.5 py-1.5 text-[12.5px] font-semibold text-navy-500"
+                >
+                  Picking it up? Switch to Collect →
+                </button>
+              </div>
             </div>
           ))}
 
