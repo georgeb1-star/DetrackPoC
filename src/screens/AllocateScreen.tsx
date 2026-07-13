@@ -4,18 +4,26 @@ import { useFleet } from '../hooks/useFleet'
 import { supabase } from '../lib/supabase'
 import { matchRoute, unallocatedReason } from '../lib/allocate'
 import { fmtDistance, orderByProximity, parseEwkbPoint, runMetrics } from '../lib/geo'
-import type { Parcel } from '../lib/types'
+import { STATUS_LABEL, type Parcel } from '../lib/types'
 
 /** Dispatcher allocation: assign parcels to a route (each route is run by one
  *  driver). Manual per-parcel assignment plus a one-click "auto-allocate by
  *  area". Writes parcels.route_id; the driver app picks the change up live via
  *  the parcels realtime channel. Same navy/gold/paper language as the
- *  Captured PODs view, with a tab back to it. */
+ *  Captured PODs view, with a tab back to it.
+ *
+ *  Scoped to a single run (due_date): recurring routes generate one run per
+ *  service day, so the whole board — unallocated list, route cards, distances,
+ *  auto-allocate — works against the selected day only, with a search box over
+ *  the top. Parcels past awaiting_collection are locked (can't be reassigned
+ *  mid-flight). */
 export function AllocateScreen() {
   const { fleet } = useFleet()
   const [parcels, setParcels] = useState<Parcel[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [day, setDay] = useState('') // '' = follow the derived default
+  const [query, setQuery] = useState('')
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.from('parcels').select('*').order('tracking_number')
@@ -45,6 +53,40 @@ export function AllocateScreen() {
     [fleet],
   )
 
+  // Distinct runs present in the data (+ always today), with per-run counts so
+  // the dispatcher can see at a glance which run still needs allocating.
+  const runInfo = useMemo(() => {
+    const m = new Map<string, { total: number; unallocated: number }>()
+    for (const p of parcels ?? []) {
+      const e = m.get(p.due_date) ?? { total: 0, unallocated: 0 }
+      e.total++
+      if (p.route_id == null) e.unallocated++
+      m.set(p.due_date, e)
+    }
+    return m
+  }, [parcels])
+
+  const runDates = useMemo(() => {
+    const set = new Set<string>(runInfo.keys())
+    set.add(todayIso())
+    return [...set].sort()
+  }, [runInfo])
+
+  // Default run: today if it has a run, else the earliest run still holding
+  // unallocated parcels, else the most recent run. The user's pick (day) wins.
+  const defaultDay = useMemo(() => {
+    const today = todayIso()
+    if (runInfo.has(today)) return today
+    const withUnallocated = [...runInfo.entries()]
+      .filter(([, v]) => v.unallocated > 0)
+      .map(([d]) => d)
+      .sort()
+    if (withUnallocated.length) return withUnallocated[0]
+    const all = [...runInfo.keys()].sort()
+    return all[all.length - 1] ?? today
+  }, [runInfo])
+  const activeDay = day || defaultDay
+
   // Optimistic write — flip route_id locally, then persist. Realtime/reload
   // reconciles if the server disagrees.
   async function assign(parcelId: string, routeId: string | null) {
@@ -58,53 +100,101 @@ export function AllocateScreen() {
     setBusy(false)
   }
 
-  async function autoAllocate() {
-    if (!parcels) return
-    setBusy(true)
-    setError(null)
-    const updates = parcels
-      .filter((p) => p.route_id == null)
-      .map((p) => ({ id: p.id, routeId: matchRoute(p, routes)?.id ?? null }))
-      .filter((u): u is { id: string; routeId: string } => u.routeId != null)
-    setParcels(
-      (prev) =>
-        prev?.map((p) => {
-          const u = updates.find((x) => x.id === p.id)
-          return u ? { ...p, route_id: u.routeId } : p
-        }) ?? prev,
-    )
-    const results = await Promise.all(
-      updates.map((u) => supabase.from('parcels').update({ route_id: u.routeId }).eq('id', u.id)),
-    )
-    const firstErr = results.find((r) => r.error)?.error
-    if (firstErr) {
-      setError(firstErr.message)
-      void load()
-    }
-    setBusy(false)
+  // Parcels on the selected run (everything below is scoped to this).
+  const scoped = useMemo(
+    () => (parcels ?? []).filter((p) => p.due_date === activeDay),
+    [parcels, activeDay],
+  )
+  const scopedUnallocated = useMemo(() => scoped.filter((p) => p.route_id == null), [scoped])
+
+  function autoAllocate() {
+    void (async () => {
+      setBusy(true)
+      setError(null)
+      // Only this run's still-collectable parcels — never touch in-flight ones.
+      const targets = scopedUnallocated
+        .filter((p) => p.status === 'awaiting_collection')
+        .map((p) => ({ id: p.id, routeId: matchRoute(p, routes)?.id ?? null }))
+        .filter((u): u is { id: string; routeId: string } => u.routeId != null)
+      if (targets.length === 0) {
+        setBusy(false)
+        return
+      }
+      const routeOf = new Map(targets.map((t) => [t.id, t.routeId]))
+      setParcels(
+        (prev) => prev?.map((p) => (routeOf.has(p.id) ? { ...p, route_id: routeOf.get(p.id)! } : p)) ?? prev,
+      )
+      // One UPDATE per target route (grouped .in()) instead of one per parcel —
+      // a run can hold hundreds of stops, so batch the writes.
+      const byRouteId = new Map<string, string[]>()
+      for (const t of targets) {
+        const arr = byRouteId.get(t.routeId)
+        if (arr) arr.push(t.id)
+        else byRouteId.set(t.routeId, [t.id])
+      }
+      const results = await Promise.all(
+        [...byRouteId.entries()].map(([routeId, ids]) =>
+          supabase.from('parcels').update({ route_id: routeId }).in('id', ids),
+        ),
+      )
+      const firstErr = results.find((r) => r.error)?.error
+      if (firstErr) {
+        setError(firstErr.message)
+        void load()
+      }
+      setBusy(false)
+    })()
   }
 
-  const unallocated = parcels?.filter((p) => p.route_id == null) ?? []
-  // parcels grouped by route id, in the routes' display order
+  // Search over the run — recipient, tracking, postcode, address, area codes.
+  const matchesQuery = useCallback(
+    (p: Parcel) => {
+      const q = query.trim().toLowerCase()
+      if (!q) return true
+      return (
+        p.recipient_name.toLowerCase().includes(q) ||
+        p.tracking_number.toLowerCase().includes(q) ||
+        (p.postcode ?? '').toLowerCase().includes(q) ||
+        p.address_line.toLowerCase().includes(q) ||
+        (p.collection_area ?? '').toLowerCase().includes(q) ||
+        (p.delivery_area ?? '').toLowerCase().includes(q)
+      )
+    },
+    [query],
+  )
+
+  const unallocatedShown = useMemo(
+    () => scopedUnallocated.filter(matchesQuery),
+    [scopedUnallocated, matchesQuery],
+  )
+
+  // Run's parcels grouped by route id (unfiltered by search — the header count
+  // and distance reflect the true run; search only narrows the rows shown).
   const byRoute = useMemo(() => {
     const map = new Map<string, Parcel[]>()
     for (const r of routes) map.set(r.id, [])
-    for (const p of parcels ?? []) if (p.route_id && map.has(p.route_id)) map.get(p.route_id)!.push(p)
+    for (const p of scoped) if (p.route_id && map.has(p.route_id)) map.get(p.route_id)!.push(p)
     return map
-  }, [routes, parcels])
+  }, [routes, scoped])
 
-  const canAuto = unallocated.some((p) => matchRoute(p, routes))
+  const canAuto = scopedUnallocated.some(
+    (p) => p.status === 'awaiting_collection' && matchRoute(p, routes),
+  )
 
   return (
     <AdminShell
       active="allocate"
       title="Allocate parcels"
-      meta={parcels ? `${unallocated.length} unallocated · ${parcels.length} parcels` : '…'}
+      meta={
+        parcels
+          ? `${fmtRunDate(activeDay)} · ${scopedUnallocated.length} unallocated · ${scoped.length} parcels`
+          : '…'
+      }
       actions={
         <button
           type="button"
           disabled={busy || !canAuto}
-          onClick={() => void autoAllocate()}
+          onClick={autoAllocate}
           className="rounded-[10px] bg-navy px-4 py-2.5 font-serif text-[13.5px] text-white transition hover:bg-navy-600 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
         >
           Auto-allocate by area
@@ -117,80 +207,130 @@ export function AllocateScreen() {
         </div>
       )}
 
-      <div className="grid items-start gap-6 xl:grid-cols-2">
-        {/* Unallocated — the dispatcher's to-do list */}
-        <section>
-          <p className="section-label mb-2">Unallocated · {unallocated.length}</p>
-
-          {parcels && unallocated.length === 0 ? (
-            <div className="rounded-2xl border border-line bg-white px-4 py-10 text-center text-[13px] text-muted">
-              Every parcel is on a route.
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {unallocated.map((p) => (
-                <ParcelRow
-                  key={p.id}
-                  parcel={p}
-                  routes={routes}
-                  driverName={driverName}
-                  busy={busy}
-                  suggestion={matchRoute(p, routes)?.name}
-                  reason={unallocatedReason(p, routes)}
-                  onAssign={(routeId) => void assign(p.id, routeId)}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* By route — each driver's run, with reassign/unassign */}
-        <section>
-          <p className="section-label mb-2">Routes</p>
-          <div className="flex flex-col gap-3">
-            {routes.map((r) => {
-              const stops = byRoute.get(r.id) ?? []
-              // Rough drive distance for the route, in nearest-neighbour order —
-              // lets the dispatcher balance runs at a glance.
-              const routeM = runMetrics(
-                orderByProximity(stops, (p) => parseEwkbPoint(p.destination)).map((p) => parseEwkbPoint(p.destination)),
-              ).totalM
+      {/* Run + search filter bar */}
+      <div className="mb-5 flex flex-wrap items-end gap-x-4 gap-y-3">
+        <label className="flex flex-col gap-1">
+          <span className="section-label">Run date</span>
+          <select
+            value={activeDay}
+            onChange={(e) => setDay(e.target.value)}
+            aria-label="Run date"
+            className="rounded-[10px] border border-line bg-white px-3 py-2 text-[13.5px] text-ink focus:border-navy-500 focus:outline-none focus:ring-[3px] focus:ring-navy-500/10"
+          >
+            {runDates.map((d) => {
+              const info = runInfo.get(d)
+              const suffix = !info
+                ? 'no parcels'
+                : info.unallocated > 0
+                  ? `${info.unallocated} unallocated`
+                  : `${info.total} allocated`
               return (
-                <article key={r.id} className="overflow-hidden rounded-2xl border border-line bg-white">
-                  <div className="flex items-baseline justify-between gap-3 border-b border-line bg-paper/60 px-4 py-2.5">
-                    <div>
-                      <div className="font-serif text-[15px] text-ink">{r.name}</div>
-                      <div className="text-[12px] text-muted">
-                        {driverName(r.driver_id)} · {r.collection_areas.join('·') || '—'} → {r.delivery_areas.join('·') || '—'}
-                      </div>
-                    </div>
-                    <span className="font-mono text-[11px] tracking-[0.5px] text-navy-500">
-                      {stops.length} stop{stops.length === 1 ? '' : 's'}
-                      {routeM > 0 && <span className="text-muted"> · ≈{fmtDistance(routeM)}</span>}
-                    </span>
-                  </div>
-                  {stops.length === 0 ? (
-                    <div className="px-4 py-3 text-[12.5px] text-muted">No parcels yet.</div>
-                  ) : (
-                    <RouteStops
-                      stops={stops}
-                      routes={routes}
-                      driverName={driverName}
-                      busy={busy}
-                      onAssign={(id, routeId) => void assign(id, routeId)}
-                    />
-                  )}
-                </article>
+                <option key={d} value={d}>
+                  {fmtRunDate(d)} — {suffix}
+                </option>
               )
             })}
-            {routes.length === 0 && (
+          </select>
+        </label>
+
+        <label className="flex min-w-[220px] flex-1 flex-col gap-1">
+          <span className="section-label">Search this run</span>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Name, tracking number, postcode, area…"
+            className="rounded-[10px] border border-line bg-white px-3 py-2 text-[13.5px] text-ink focus:border-navy-500 focus:outline-none focus:ring-[3px] focus:ring-navy-500/10"
+          />
+        </label>
+      </div>
+
+      {!parcels ? (
+        <div className="rounded-2xl border border-line bg-white px-4 py-10 text-center text-[13px] text-muted">
+          Loading parcels…
+        </div>
+      ) : (
+        <div className="grid items-start gap-6 xl:grid-cols-2">
+          {/* Unallocated — the dispatcher's to-do list for this run */}
+          <section>
+            <p className="section-label mb-2">Unallocated · {unallocatedShown.length}</p>
+
+            {scoped.length === 0 ? (
               <div className="rounded-2xl border border-line bg-white px-4 py-10 text-center text-[13px] text-muted">
-                No routes found — apply the drivers/routes migration and seed.
+                No parcels on this run.
+              </div>
+            ) : unallocatedShown.length === 0 ? (
+              <div className="rounded-2xl border border-line bg-white px-4 py-10 text-center text-[13px] text-muted">
+                {query ? 'No unallocated parcels match your search.' : 'Every parcel on this run is on a route.'}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {unallocatedShown.map((p) => (
+                  <ParcelRow
+                    key={p.id}
+                    parcel={p}
+                    routes={routes}
+                    driverName={driverName}
+                    busy={busy}
+                    suggestion={matchRoute(p, routes)?.name}
+                    reason={unallocatedReason(p, routes)}
+                    onAssign={(routeId) => void assign(p.id, routeId)}
+                  />
+                ))}
               </div>
             )}
-          </div>
-        </section>
-      </div>
+          </section>
+
+          {/* By route — each driver's run, with reassign/unassign */}
+          <section>
+            <p className="section-label mb-2">Routes</p>
+            <div className="flex flex-col gap-3">
+              {routes.map((r) => {
+                const stops = byRoute.get(r.id) ?? []
+                const shownStops = query ? stops.filter(matchesQuery) : stops
+                // Rough drive distance for the route, in nearest-neighbour order —
+                // lets the dispatcher balance runs at a glance.
+                const routeM = runMetrics(
+                  orderByProximity(stops, (p) => parseEwkbPoint(p.destination)).map((p) => parseEwkbPoint(p.destination)),
+                ).totalM
+                return (
+                  <article key={`${r.id}:${activeDay}`} className="overflow-hidden rounded-2xl border border-line bg-white">
+                    <div className="flex items-baseline justify-between gap-3 border-b border-line bg-paper/60 px-4 py-2.5">
+                      <div>
+                        <div className="font-serif text-[15px] text-ink">{r.name}</div>
+                        <div className="text-[12px] text-muted">
+                          {driverName(r.driver_id)} · {r.collection_areas.join('·') || '—'} → {r.delivery_areas.join('·') || '—'}
+                        </div>
+                      </div>
+                      <span className="font-mono text-[11px] tracking-[0.5px] text-navy-500">
+                        {stops.length} stop{stops.length === 1 ? '' : 's'}
+                        {routeM > 0 && <span className="text-muted"> · ≈{fmtDistance(routeM)}</span>}
+                      </span>
+                    </div>
+                    {stops.length === 0 ? (
+                      <div className="px-4 py-3 text-[12.5px] text-muted">No parcels yet.</div>
+                    ) : shownStops.length === 0 ? (
+                      <div className="px-4 py-3 text-[12.5px] text-muted">No stops match your search.</div>
+                    ) : (
+                      <RouteStops
+                        stops={shownStops}
+                        routes={routes}
+                        driverName={driverName}
+                        busy={busy}
+                        onAssign={(id, routeId) => void assign(id, routeId)}
+                      />
+                    )}
+                  </article>
+                )
+              })}
+              {routes.length === 0 && (
+                <div className="rounded-2xl border border-line bg-white px-4 py-10 text-center text-[13px] text-muted">
+                  No routes found — apply the drivers/routes migration and seed.
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
     </AdminShell>
   )
 }
@@ -260,7 +400,9 @@ function RouteStops({
 }
 
 /** One parcel line with an inline route selector. Used both in the unallocated
- *  list and inside each route card (inset). */
+ *  list and inside each route card (inset). Once a parcel is past
+ *  awaiting_collection it's in flight on a driver's run — the selector is
+ *  replaced by a locked status pill so it can't be reassigned mid-run. */
 function ParcelRow({
   parcel: p,
   routes,
@@ -280,6 +422,7 @@ function ParcelRow({
   reason?: string | null
   onAssign: (routeId: string | null) => void
 }) {
+  const locked = p.status !== 'awaiting_collection'
   return (
     <div
       className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between ${
@@ -302,24 +445,56 @@ function ParcelRow({
       </div>
 
       <div className="flex flex-none items-center gap-2">
-        {suggestion && (
-          <span className="hidden text-[11px] text-muted sm:inline">→ {suggestion}</span>
+        {locked ? (
+          <span
+            title={`${STATUS_LABEL[p.status]} — locked while in flight`}
+            className="inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-paper px-2.5 py-2 text-[12px] font-semibold text-muted"
+          >
+            <LockIcon />
+            {STATUS_LABEL[p.status]}
+          </span>
+        ) : (
+          <>
+            {suggestion && <span className="hidden text-[11px] text-muted sm:inline">→ {suggestion}</span>}
+            <select
+              value={p.route_id ?? ''}
+              disabled={busy}
+              onChange={(e) => onAssign(e.target.value || null)}
+              aria-label={`Assign ${p.tracking_number} to a route`}
+              className="rounded-[10px] border border-line bg-white px-2.5 py-2 text-[13px] text-ink focus:border-navy-500 focus:outline-none focus:ring-[3px] focus:ring-navy-500/10 disabled:opacity-50"
+            >
+              <option value="">Unassigned</option>
+              {routes.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name} · {driverName(r.driver_id)}
+                </option>
+              ))}
+            </select>
+          </>
         )}
-        <select
-          value={p.route_id ?? ''}
-          disabled={busy}
-          onChange={(e) => onAssign(e.target.value || null)}
-          aria-label={`Assign ${p.tracking_number} to a route`}
-          className="rounded-[10px] border border-line bg-white px-2.5 py-2 text-[13px] text-ink focus:border-navy-500 focus:outline-none focus:ring-[3px] focus:ring-navy-500/10 disabled:opacity-50"
-        >
-          <option value="">Unassigned</option>
-          {routes.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name} · {driverName(r.driver_id)}
-            </option>
-          ))}
-        </select>
       </div>
     </div>
   )
+}
+
+function LockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  )
+}
+
+/** Today as YYYY-MM-DD (matches the manifest import's run-date convention). */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+/** A run date (YYYY-MM-DD) as e.g. "Mon 13 Jul". Parsed as local midnight so
+ *  UK dates don't slip a day. */
+function fmtRunDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })
 }
