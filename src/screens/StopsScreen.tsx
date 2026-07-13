@@ -128,13 +128,16 @@ export function StopsScreen({
   // active is recomputed inline each render (new array ref), so useMemo would
   // re-run every render anyway — a plain const is honest and simpler.
   const collectGroups = (() => {
-    const m = new Map<string, { name: string; postcode: string | null; parcels: Parcel[] }>()
+    const m = new Map<string, { name: string | null; postcode: string | null; parcels: Parcel[] }>()
     for (const p of active) {
       const key = p.sender_postcode ?? '∅'
-      const g = m.get(key) ?? { name: p.sender_name || p.sender_address_line || 'Unknown origin', postcode: p.sender_postcode, parcels: [] }
+      // name = the collection point. null when the parcel carries no sender/origin
+      // (e.g. coupon runs, which are picked up as one batch) — the card then
+      // renders header-less rather than a meaningless "Unknown origin" label.
+      const g = m.get(key) ?? { name: p.sender_name || p.sender_address_line || null, postcode: p.sender_postcode, parcels: [] }
       g.parcels.push(p); m.set(key, g)
     }
-    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name))
+    return [...m.values()].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
   })()
 
   // Deliver phase in a sensible DRIVE order: nearest-neighbour over the stops'
@@ -247,12 +250,14 @@ export function StopsScreen({
             {collectGroups.map((g) => {
               const done = g.parcels.filter((p) => STATUS_RANK[effectiveStatus(p)] >= STATUS_RANK['collected']).length
               return (
-                <article key={g.postcode ?? g.name} className="flex flex-col rounded-2xl border border-line bg-white p-4">
+                <article key={g.postcode ?? g.name ?? 'origin'} className="flex flex-col rounded-2xl border border-line bg-white p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-[15px] font-semibold text-ink">{g.name}</div>
-                      {g.postcode && <div className="font-mono text-[11px] tracking-[0.5px] text-navy-500">{g.postcode}</div>}
-                    </div>
+                    {(g.name || g.postcode) && (
+                      <div className="min-w-0">
+                        {g.name && <div className="truncate text-[15px] font-semibold text-ink">{g.name}</div>}
+                        {g.postcode && <div className="font-mono text-[11px] tracking-[0.5px] text-navy-500">{g.postcode}</div>}
+                      </div>
+                    )}
                     <span className={`flex-none rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] ${done === g.parcels.length ? 'border-ok/40 bg-ok/10 text-ok' : 'border-gold/50 bg-gold/10 text-gold'}`}>
                       Collected {done}/{g.parcels.length}
                     </span>

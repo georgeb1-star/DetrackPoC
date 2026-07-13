@@ -22,6 +22,12 @@ export function useParcels() {
       .from('parcels')
       .select('*')
       .lte('due_date', today)
+      // Don't drag the whole delivery history onto the run. The driver only
+      // needs what StopsScreen actually shows: still-active stops (any age →
+      // rollovers included) plus items completed *today*. Terminal stops from
+      // earlier days are left server-side, unfetched — without this bound the
+      // result set grows every run day (recurring schedules never stop adding).
+      .or(`status.not.in.(delivered,returned),completed_at.gte.${today}`)
       // Oldest due first → rollovers lead the run, then today's stops
       .order('due_date', { ascending: true })
       .order('tracking_number')
