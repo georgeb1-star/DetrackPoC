@@ -82,6 +82,21 @@ async function main() {
     return
   }
 
+  // Bail on anything that would create a junk manifest *before* we touch the
+  // DB — an empty feed or a missing run date is what once left a dateless
+  // "Coupons " job with no parcels behind. (Also saves a pointless geocode.)
+  if (rows.length === 0) {
+    console.error('ABORT: the feed has no data rows.')
+    process.exitCode = 1
+    return
+  }
+  const runDate = isoDate(get(rows[0], 'Inshopdate'))
+  if (!runDate) {
+    console.error('ABORT: no valid run date (Inshopdate) in the first row — refusing to create a dateless manifest.')
+    process.exitCode = 1
+    return
+  }
+
   const geo = await geocode(rows.map((r) => get(r, 'PostCode')))
 
   const env = Object.fromEntries(
@@ -100,15 +115,16 @@ async function main() {
   const { data: routes } = await db.from('routes').select('id,name')
   const routeByName = new Map((routes || []).map((r) => [r.name.toLowerCase(), r.id]))
 
-  const runDate = isoDate(get(rows[0], 'Inshopdate'))
   const name = `Coupons ${runDate}`
   let manifestId
+  let createdManifest = false
   const { data: ex } = await db.from('manifests').select('id').eq('name', name).maybeSingle()
   if (ex) { manifestId = ex.id; await db.from('manifests').update({ imported_at: new Date().toISOString(), source_filename: RUN_CSV }).eq('id', manifestId) }
   else {
     const { data, error } = await db.from('manifests').insert({ name, reference: 'coupon', source_filename: RUN_CSV }).select('id').single()
     if (error) throw new Error(`manifest: ${error.message}`)
     manifestId = data.id
+    createdManifest = true
   }
 
   const byRoute = {}, misses = [], unroutedNames = new Set()
@@ -142,7 +158,11 @@ async function main() {
   if (unroutedNames.size) console.log(`WARN: no route matches for: ${[...unroutedNames].join(', ')} — those parcels are unallocated`)
 
   const { error } = await db.from('parcels').upsert(parcels, { onConflict: 'tracking_number' })
-  if (error) throw new Error(`parcels: ${error.message}`)
+  if (error) {
+    // Never leave an empty manifest behind if the parcels didn't land.
+    if (createdManifest) await db.from('manifests').delete().eq('id', manifestId)
+    throw new Error(`parcels: ${error.message}`)
+  }
   console.log(`Loaded ${parcels.length} parcels for "${name}" (tracking = real CarrierBarcode).`)
 }
 await main()
