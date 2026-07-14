@@ -1,16 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ColourJson } from '../components/ColourJson'
+import { useEffect, useMemo } from 'react'
 import { useQueuedPod, useQueuedPodByParcel } from '../hooks/useSyncStatus'
 import type { QueuedPod } from '../lib/db'
 import { fmtDistance } from '../lib/geo'
-import { photoPath, signaturePath } from '../lib/pod'
 import { STATUS_LABEL, type Parcel } from '../lib/types'
 
 /** Confirmation: green banner, the stamped photo, then a human-readable
- *  delivery receipt. The raw record JSON lives behind a collapsed
- *  "technical record" toggle — demo material, not driver UI. Watches the
- *  local queue so everything flips live from queued to synced. Two columns
- *  on laptop (proof | receipt), a single flow on mobile. */
+ *  delivery receipt — the proof a driver actually needs (the raw POD JSON is
+ *  dispatcher/debug material and isn't shown here). Watches the local queue so
+ *  everything flips live from queued to synced. Two columns on laptop
+ *  (proof | receipt), a single flow on mobile. */
 export function ResultScreen({
   pod: initialPod,
   previewUrl,
@@ -23,7 +21,6 @@ export function ResultScreen({
   onReset: () => void
 }) {
   const pod = useQueuedPod(initialPod.podId) ?? initialPod
-  const [showTech, setShowTech] = useState(false)
   const failed = pod.status === 'failed'
   const synced = pod.synced === 1
   const label = pod.photos.find((p) => p.type === 'label')
@@ -179,23 +176,6 @@ export function ResultScreen({
             )}
           </div>
 
-          {/* The raw record, for demos and debugging — collapsed by default */}
-          <button
-            type="button"
-            onClick={() => setShowTech((s) => !s)}
-            className="mx-auto mt-3.5 block text-[11.5px] text-muted underline"
-          >
-            {showTech ? 'Hide technical record' : 'View technical record'}
-          </button>
-          {showTech && (
-            <div className="mt-2.5">
-              <ColourJson
-                header={synced ? 'POD record · synced to Supabase' : 'POD record · saved to device'}
-                value={buildTechRecord(pod, synced)}
-              />
-            </div>
-          )}
-
           <button
             type="button"
             onClick={onReset}
@@ -216,33 +196,6 @@ function Row({ k, children }: { k: string; children: React.ReactNode }) {
       <span className="min-w-0 text-right text-[13px] font-medium tabular-nums">{children}</span>
     </div>
   )
-}
-
-function buildTechRecord(pod: QueuedPod, synced: boolean) {
-  return {
-    pod_id: pod.podId,
-    parcel_ref: pod.parcelRef,
-    tracking: pod.trackingScanned,
-    status: pod.status,
-    ...(pod.status === 'failed' ? { failure_reason: pod.failureReason } : {}),
-    received_by: pod.receivedBy,
-    captured_at: pod.capturedAt,
-    synced_at: pod.syncedAt,
-    location: pod.location
-      ? { lat: pod.location.lat, lng: pod.location.lng, accuracy_m: pod.location.accuracyM }
-      : null,
-    gps_source: pod.location?.source ?? null,
-    dest_distance_m: pod.destDistanceM,
-    signature: pod.signature ? (synced ? signaturePath(pod.podId) : 'queued') : null,
-    photos: pod.photos.map((p) => ({
-      type: p.type,
-      stored: synced ? photoPath(pod.podId, p.type) : 'pending-upload',
-      orig_kb: p.origKb,
-      compressed_kb: p.compressedKb,
-    })),
-    driver_id: pod.driverId ?? null,
-    device_queued: !synced,
-  }
 }
 
 function fmtTime(iso: string | null): string {
