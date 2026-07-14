@@ -12,6 +12,7 @@ import { DispatcherScreen } from './screens/DispatcherScreen.tsx'
 import { CollectionsScreen } from './screens/CollectionsScreen.tsx'
 import { JobsScreen } from './screens/JobsScreen.tsx'
 import { LoginScreen } from './screens/LoginScreen.tsx'
+import { OverviewScreen } from './screens/OverviewScreen.tsx'
 import { ReconcileScreen } from './screens/ReconcileScreen.tsx'
 import { SitesScreen } from './screens/SitesScreen.tsx'
 
@@ -48,7 +49,7 @@ function Root() {
   const isAdmin = profile?.role === 'admin'
   // A driver who deep-links to a dispatcher route gets bounced to their run.
   useEffect(() => {
-    if (profile && !isAdmin && ['#/dispatch', '#/allocate', '#/jobs', '#/sites', '#/collections', '#/reconcile', '#/admin'].includes(hash)) {
+    if (profile && !isAdmin && ['#/overview', '#/dispatch', '#/allocate', '#/jobs', '#/sites', '#/collections', '#/reconcile', '#/admin'].includes(hash)) {
       window.location.hash = ''
     }
   }, [profile, isAdmin, hash])
@@ -61,7 +62,9 @@ function Root() {
   let screen
   if (isAdmin) {
     screen =
-      hash === '#/dispatch' ? (
+      hash === '#/overview' ? (
+        <OverviewScreen />
+      ) : hash === '#/dispatch' ? (
         <DispatcherScreen />
       ) : hash === '#/jobs' ? (
         <JobsScreen />
