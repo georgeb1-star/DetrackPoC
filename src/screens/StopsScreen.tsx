@@ -627,10 +627,10 @@ interface SessionScan {
   recorded: boolean
 }
 
-/** The driver must pick one of these before a scan does anything — there is no
- *  default and no auto-advance, so a parcel can only ever move to a stage the
- *  driver deliberately chose. That's the whole point: it stops a stray scan
- *  from advancing the wrong parcel. */
+/** The driver picks the starting stage; scanning then AUTO-ADVANCES a parcel to
+ *  its next lifecycle step (see nextStage / tryMatch). The picked stage is a
+ *  floor — Deliver always opens the full capture, so a collected coupon parcel
+ *  can be delivered without being routed through warehouse. */
 const SCAN_STAGES: { key: Stage; label: string }[] = [
   { key: 'collection', label: 'Collect' },
   { key: 'warehouse', label: 'Warehouse' },
@@ -653,11 +653,13 @@ function nextStage(status: ParcelStatus): Stage | null {
   }
 }
 
-/** Scan sheet (§5): the driver first picks a stage — Collect, Warehouse or
- *  Deliver — then scans. There is NO auto/default stage: a parcel only moves
- *  to the stage the driver chose, which keeps a mis-aimed scan from advancing
- *  the wrong parcel. Collect/Warehouse are quick scans (stamp time + fresh
- *  GPS, sheet stays open for batch scanning); Deliver opens the full capture.
+/** Scan sheet (§5): the driver picks a stage — Collect, Warehouse or Deliver —
+ *  then scans. Scanning AUTO-ADVANCES the parcel to its next lifecycle step: a
+ *  re-scan of an already-collected parcel walks it forward
+ *  (collected→at_warehouse→delivery) without re-picking, and Deliver always
+ *  opens the full capture (so coupon runs skip warehouse). Collect/Warehouse
+ *  are quick scans (stamp time + fresh GPS, sheet stays open for batch
+ *  scanning); a 15 s per-label lock stops a held camera burst-advancing.
  *  Type-in is the manual fallback; unknown values surface clearly. */
 function ScanSheet({
   parcels,

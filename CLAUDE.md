@@ -63,11 +63,17 @@ Routing:  main.tsx hash router gated by useSession (LoginScreen when signed
   `returned`). Each forward step is a scan event in `parcel_events`
   (client-UUID pk = idempotency key, stage, captured_at device clock,
   synced_at server default, location/accuracy/source, driver_id).
-  Collection/warehouse = QUICK scans (no photo) via the scan sheet's stage
-  switch, queued in Dexie `events` (v4) and drained by the same sync worker;
-  delivery = the full POD capture, whose sync also upserts a `delivered`
-  event (id = podId). Ordering is warn-but-allow: events record as scanned,
-  but status only ever advances forward via the atomic
+  Collection/warehouse = QUICK scans (no photo) from the scan sheet, queued in
+  Dexie `events` (v4) and drained by the same sync worker; delivery = the full
+  POD capture, whose sync also upserts a `delivered` event (id = podId).
+  **Scanning auto-advances (2026-07-14, supersedes the earlier
+  no-auto-advance / warn-but-allow model):** a scan moves the parcel to its
+  NEXT lifecycle step, so re-scanning an already-collected parcel walks it
+  forward (collected→at_warehouse→delivery) without re-picking a stage. The
+  stage switch is a floor: picking Deliver routes a collected parcel straight
+  to capture, so coupon runs (collect→deliver) skip warehouse; a 15 s
+  per-label lockout stops a held camera burst-advancing. Server-side the
+  guarantee is unchanged — status only ever advances forward via the atomic
   `advance_parcel_status` RPC (security invoker, rank guard in SQL), so
   late/concurrent syncs can't regress a parcel. Event INSERT RLS requires
   the parcel to be on the driver's own route (hardening migration
