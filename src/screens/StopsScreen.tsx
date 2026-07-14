@@ -607,6 +607,7 @@ export function StopsScreen({
           }}
           onStageScan={recordStageScan}
           onAdhocCollect={adhocCollect}
+          effectiveStatusOf={effectiveStatus}
           initialStage={phase === 'collect' ? 'collection' : 'delivered'}
         />
       )}
@@ -648,6 +649,7 @@ function ScanSheet({
   onMatch,
   onStageScan,
   onAdhocCollect,
+  effectiveStatusOf,
   initialStage,
 }: {
   parcels: Parcel[]
@@ -656,6 +658,9 @@ function ScanSheet({
   onStageScan: (parcel: Parcel, scannedValue: string, stage: Stage, fix: Fix | null) => Promise<string | null>
   /** Collect an unknown (not-on-run) label as a new ad-hoc parcel. */
   onAdhocCollect: (tracking: string, fix: Fix | null) => Promise<void>
+  /** The parcel's lifecycle position on this device (server + queued scans) —
+   *  used to catch a scan that wouldn't move it forward (a duplicate). */
+  effectiveStatusOf: (parcel: Parcel) => ParcelStatus
   /** Pre-select the stage based on the active phase; the driver can still override. */
   initialStage?: Stage
 }) {
@@ -666,6 +671,9 @@ function ScanSheet({
   const [unknown, setUnknown] = useState<string | null>(null)
   const [scans, setScans] = useState<SessionScan[]>([])
   const [adhocBusy, setAdhocBusy] = useState(false)
+  // A scanned parcel that's already at/past this stage — held for an explicit
+  // confirm instead of being recorded straight away (see the guard in tryMatch).
+  const [dup, setDup] = useState<{ parcel: Parcel; stage: Stage } | null>(null)
   // GPS for quick scans: warm-up on sheet open, fresh fix at each scan —
   // same real-or-nothing model as the capture screen.
   const { fix, noFixReason, acquiring, getFix, retry } = useGeolocation()
@@ -685,6 +693,7 @@ function ScanSheet({
         if (lastUnknownRef.current.v === needle && now - lastUnknownRef.current.t < 2500) return
         lastUnknownRef.current = { v: needle, t: now }
       }
+      setDup(null)
       setUnknown(needle)
       return
     }
@@ -704,13 +713,42 @@ function ScanSheet({
       return
     }
 
+    // Guard duplicate / out-of-order quick scans: a scan that wouldn't move the
+    // parcel forward (it's already collected / at warehouse) is almost always a
+    // mistake — a parcel is physically collected once. Don't silently record it;
+    // hold it for an explicit confirm so a stray re-scan can't quietly pile up
+    // duplicate events.
+    if (STATUS_RANK[STAGE_STATUS[stage]] <= STATUS_RANK[effectiveStatusOf(parcel)]) {
+      navigator.vibrate?.([50, 40, 50]) // distinct "hold on" pattern, not the "got it" buzz
+      setUnknown(null)
+      setValue('')
+      setDup({ parcel, stage })
+      return
+    }
+
     // Quick stage scan
     navigator.vibrate?.(80)
     setUnknown(null)
+    setDup(null)
     setValue('')
     const at = new Date()
     const scanFix = await getFix() // fresh read so the event is located where scanned
     const warning = await onStageScan(parcel, needle, stage, scanFix)
+    setScans((prev) =>
+      [{ ref: parcel.tracking_number, name: parcel.recipient_name, stage, at, fix: scanFix, warning, recorded: true }, ...prev].slice(0, 8),
+    )
+  }
+
+  /** The driver explicitly OK'd recording a duplicate/out-of-order scan (it
+   *  won't change the parcel's status; it's kept as an audit event). */
+  async function confirmDup() {
+    if (!dup) return
+    const { parcel, stage } = dup
+    setDup(null)
+    navigator.vibrate?.(80)
+    const at = new Date()
+    const scanFix = await getFix()
+    const warning = await onStageScan(parcel, parcel.tracking_number, stage, scanFix)
     setScans((prev) =>
       [{ ref: parcel.tracking_number, name: parcel.recipient_name, stage, at, fix: scanFix, warning, recorded: true }, ...prev].slice(0, 8),
     )
@@ -750,7 +788,10 @@ function ScanSheet({
             <button
               key={m.key}
               type="button"
-              onClick={() => setMode(m.key)}
+              onClick={() => {
+                setMode(m.key)
+                setDup(null)
+              }}
               className={`rounded-[9px] px-1 py-2.5 text-[13px] font-semibold transition ${
                 mode === m.key ? 'bg-navy text-white' : 'text-muted hover:text-ink'
               }`}
@@ -864,6 +905,40 @@ function ScanSheet({
               </div>
             </div>
           ))}
+
+        {/* Duplicate / out-of-order scan — held for an explicit confirm. The
+            default action is to skip (treat it as the likely mistake); recording
+            is the deliberate override, and even then it can't regress status. */}
+        {dup && (
+          <div className="mt-2.5 rounded-[11px] border border-fail/50 bg-fail/10 px-3 py-3 text-[13px]">
+            <div className="font-bold uppercase tracking-[0.4px] text-fail">
+              Already {STATUS_LABEL[effectiveStatusOf(dup.parcel)].toLowerCase()}
+            </div>
+            <div className="mt-1 text-ink">
+              <span className="font-mono font-semibold">{dup.parcel.tracking_number}</span> · {dup.parcel.recipient_name}
+            </div>
+            <div className="mt-0.5 text-[12.5px] leading-snug text-muted">
+              This parcel is already {STATUS_LABEL[effectiveStatusOf(dup.parcel)].toLowerCase()}. Scanning it again won't
+              change its status — record a duplicate {STAGE_LABEL[dup.stage].toLowerCase()} scan anyway?
+            </div>
+            <div className="mt-2.5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDup(null)}
+                className="flex-1 rounded-[10px] border border-line bg-white p-2.5 text-[13px] font-semibold text-muted"
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDup()}
+                className="flex-1 rounded-[10px] bg-fail p-2.5 font-serif text-[14px] text-white transition active:translate-y-px"
+              >
+                Record anyway
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Session log: every quick scan this sheet recorded, newest first */}
         {scans.length > 0 && (
