@@ -637,6 +637,22 @@ const SCAN_STAGES: { key: Stage; label: string }[] = [
   { key: 'delivered', label: 'Deliver' },
 ]
 
+/** The stage a scan should record to move a parcel one step forward from its
+ *  current status — the ladder the auto-advance walks. null once terminal
+ *  (delivered / returned), where a re-scan opens the read-only receipt. */
+function nextStage(status: ParcelStatus): Stage | null {
+  switch (status) {
+    case 'awaiting_collection':
+      return 'collection'
+    case 'collected':
+      return 'warehouse'
+    case 'at_warehouse':
+      return 'delivered'
+    default:
+      return null
+  }
+}
+
 /** Scan sheet (§5): the driver first picks a stage — Collect, Warehouse or
  *  Deliver — then scans. There is NO auto/default stage: a parcel only moves
  *  to the stage the driver chose, which keeps a mis-aimed scan from advancing
@@ -671,9 +687,6 @@ function ScanSheet({
   const [unknown, setUnknown] = useState<string | null>(null)
   const [scans, setScans] = useState<SessionScan[]>([])
   const [adhocBusy, setAdhocBusy] = useState(false)
-  // A scanned parcel that's already at/past this stage — held for an explicit
-  // confirm instead of being recorded straight away (see the guard in tryMatch).
-  const [dup, setDup] = useState<{ parcel: Parcel; stage: Stage } | null>(null)
   // GPS for quick scans: warm-up on sheet open, fresh fix at each scan —
   // same real-or-nothing model as the capture screen.
   const { fix, noFixReason, acquiring, getFix, retry } = useGeolocation()
@@ -681,6 +694,9 @@ function ScanSheet({
   // repeated values so one aim doesn't log/flag the same label repeatedly.
   const lastUnknownRef = useRef({ v: '', t: 0 })
   const lastScanRef = useRef({ v: '', t: 0 })
+  // tracking → last time we auto-advanced it, so a held camera / accidental
+  // repeat can't walk one parcel through several stages in a burst.
+  const advancedAtRef = useRef<Map<string, number>>(new Map())
 
   async function tryMatch(raw: string, source: 'scan' | 'type') {
     if (mode === null) return // a stage must be chosen first — scanning is inert until then
@@ -693,7 +709,6 @@ function ScanSheet({
         if (lastUnknownRef.current.v === needle && now - lastUnknownRef.current.t < 2500) return
         lastUnknownRef.current = { v: needle, t: now }
       }
-      setDup(null)
       setUnknown(needle)
       return
     }
@@ -704,51 +719,41 @@ function ScanSheet({
     if (lastScanRef.current.v === needle && now - lastScanRef.current.t < 4000) return
     lastScanRef.current = { v: needle, t: now }
 
-    // The stage is whatever the driver chose above — explicit, never inferred.
-    const stage: Stage = mode
+    // Auto-advance model: a scan moves the parcel to its NEXT lifecycle step.
+    // Deliver is always the full capture. For a quick scan, if the picked stage
+    // is already behind the parcel's status (a re-scan of an already-collected
+    // parcel), walk it one step forward instead — collected → at_warehouse →
+    // delivery — so a second scan progresses the parcel without re-picking a stage.
+    const current = effectiveStatusOf(parcel)
+    let stage: Stage = mode
+    if (stage !== 'delivered' && STATUS_RANK[STAGE_STATUS[stage]] <= STATUS_RANK[current]) {
+      const next = nextStage(current)
+      if (!next) {
+        // Already delivered / returned — open its read-only receipt, never re-capture.
+        onMatch(parcel, needle)
+        return
+      }
+      stage = next
+    }
 
     if (stage === 'delivered') {
-      navigator.vibrate?.(80) // tactile "got it" on supporting devices
+      navigator.vibrate?.(80) // hands over to the full delivery capture
       onMatch(parcel, needle)
       return
     }
 
-    // Guard duplicate / out-of-order quick scans: a scan that wouldn't move the
-    // parcel forward (it's already collected / at warehouse) is almost always a
-    // mistake — a parcel is physically collected once. Don't silently record it;
-    // hold it for an explicit confirm so a stray re-scan can't quietly pile up
-    // duplicate events.
-    if (STATUS_RANK[STAGE_STATUS[stage]] <= STATUS_RANK[effectiveStatusOf(parcel)]) {
-      navigator.vibrate?.([50, 40, 50]) // distinct "hold on" pattern, not the "got it" buzz
-      setUnknown(null)
-      setValue('')
-      setDup({ parcel, stage })
-      return
-    }
+    // Quick stage scan (collection / warehouse). Lock the label briefly after an
+    // advance so a held camera or an accidental repeat can't walk it through
+    // several stages in a burst — only a deliberate later scan moves it on.
+    if (now - (advancedAtRef.current.get(needle) ?? 0) < 15000) return
+    advancedAtRef.current.set(needle, now)
 
-    // Quick stage scan
     navigator.vibrate?.(80)
     setUnknown(null)
-    setDup(null)
     setValue('')
     const at = new Date()
     const scanFix = await getFix() // fresh read so the event is located where scanned
     const warning = await onStageScan(parcel, needle, stage, scanFix)
-    setScans((prev) =>
-      [{ ref: parcel.tracking_number, name: parcel.recipient_name, stage, at, fix: scanFix, warning, recorded: true }, ...prev].slice(0, 8),
-    )
-  }
-
-  /** The driver explicitly OK'd recording a duplicate/out-of-order scan (it
-   *  won't change the parcel's status; it's kept as an audit event). */
-  async function confirmDup() {
-    if (!dup) return
-    const { parcel, stage } = dup
-    setDup(null)
-    navigator.vibrate?.(80)
-    const at = new Date()
-    const scanFix = await getFix()
-    const warning = await onStageScan(parcel, parcel.tracking_number, stage, scanFix)
     setScans((prev) =>
       [{ ref: parcel.tracking_number, name: parcel.recipient_name, stage, at, fix: scanFix, warning, recorded: true }, ...prev].slice(0, 8),
     )
@@ -788,10 +793,7 @@ function ScanSheet({
             <button
               key={m.key}
               type="button"
-              onClick={() => {
-                setMode(m.key)
-                setDup(null)
-              }}
+              onClick={() => setMode(m.key)}
               className={`rounded-[9px] px-1 py-2.5 text-[13px] font-semibold transition ${
                 mode === m.key ? 'bg-navy text-white' : 'text-muted hover:text-ink'
               }`}
@@ -812,7 +814,7 @@ function ScanSheet({
             <p className="mb-2 text-[11.5px] leading-snug text-muted">
               {mode === 'delivered'
                 ? 'Scanning opens the full delivery capture (photo, signature, outcome).'
-                : `Quick scan — each label is stamped ${mode === 'collection' ? 'collected' : 'at warehouse'} with time + GPS. Keep scanning, the sheet stays open.`}
+                : 'Scan to advance each parcel a step — collected → warehouse → delivery, stamped with time + GPS. Scan the same label again to move it on; the sheet stays open.'}
             </p>
 
             <BarcodeScanner onDecode={(v) => void tryMatch(v, 'scan')} />
@@ -905,40 +907,6 @@ function ScanSheet({
               </div>
             </div>
           ))}
-
-        {/* Duplicate / out-of-order scan — held for an explicit confirm. The
-            default action is to skip (treat it as the likely mistake); recording
-            is the deliberate override, and even then it can't regress status. */}
-        {dup && (
-          <div className="mt-2.5 rounded-[11px] border border-fail/50 bg-fail/10 px-3 py-3 text-[13px]">
-            <div className="font-bold uppercase tracking-[0.4px] text-fail">
-              Already {STATUS_LABEL[effectiveStatusOf(dup.parcel)].toLowerCase()}
-            </div>
-            <div className="mt-1 text-ink">
-              <span className="font-mono font-semibold">{dup.parcel.tracking_number}</span> · {dup.parcel.recipient_name}
-            </div>
-            <div className="mt-0.5 text-[12.5px] leading-snug text-muted">
-              This parcel is already {STATUS_LABEL[effectiveStatusOf(dup.parcel)].toLowerCase()}. Scanning it again won't
-              change its status — record a duplicate {STAGE_LABEL[dup.stage].toLowerCase()} scan anyway?
-            </div>
-            <div className="mt-2.5 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setDup(null)}
-                className="flex-1 rounded-[10px] border border-line bg-white p-2.5 text-[13px] font-semibold text-muted"
-              >
-                Skip
-              </button>
-              <button
-                type="button"
-                onClick={() => void confirmDup()}
-                className="flex-1 rounded-[10px] bg-fail p-2.5 font-serif text-[14px] text-white transition active:translate-y-px"
-              >
-                Record anyway
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Session log: every quick scan this sheet recorded, newest first */}
         {scans.length > 0 && (
