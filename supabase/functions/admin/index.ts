@@ -126,6 +126,9 @@ async function listUsers(admin: SupabaseClient): Promise<AdminUser[]> {
   const driverName = new Map((drivers ?? []).map((d) => [d.id, d.name]))
   const now = Date.now()
   return list.users
+    // ePOD-only: auth.users is SHARED with another app on this Supabase project,
+    // so a login with no ePOD profile isn't ours — never list (or manage) it.
+    .filter((u) => profById.has(u.id))
     .map((u): AdminUser => {
       const p = profById.get(u.id)
       const banned = (u as { banned_until?: string }).banned_until
@@ -150,6 +153,15 @@ async function listUsers(admin: SupabaseClient): Promise<AdminUser[]> {
 async function activeAdminIds(admin: SupabaseClient): Promise<Set<string>> {
   const users = await listUsers(admin)
   return new Set(users.filter((u) => u.role === 'admin' && !u.disabled).map((u) => u.id))
+}
+
+/** True when the id belongs to an ePOD-managed user (has a public.profiles row).
+ *  Auth is shared with another app on this project, so every mutating action
+ *  refuses ids that aren't ePOD users — we must never modify/ban/delete the
+ *  other app's logins (and deleting one fails on its FKs anyway). */
+async function isEpodUser(admin: SupabaseClient, id: string): Promise<boolean> {
+  const { data } = await admin.from('profiles').select('id').eq('id', id).maybeSingle()
+  return !!data
 }
 
 async function createUser(admin: SupabaseClient, body: Record<string, unknown>) {
@@ -197,6 +209,9 @@ async function updateUser(admin: SupabaseClient, body: Record<string, unknown>, 
     .select('role, driver_id, full_name')
     .eq('id', id)
     .maybeSingle()
+  // ePOD-only (shared auth): refuse a login that isn't an ePOD user, so we
+  // never adopt or edit the co-tenant app's accounts.
+  if (!current) return json({ error: "That user isn't managed by ePOD" }, 404)
 
   // Only touch the profile when a profile field was actually supplied — a
   // password-only reset must not require a role or rewrite anything else.
@@ -263,6 +278,7 @@ async function setActive(admin: SupabaseClient, body: Record<string, unknown>, c
   const id = String(body.id ?? '')
   const active = Boolean(body.active)
   if (!id) return json({ error: 'User id is required' }, 400)
+  if (!(await isEpodUser(admin, id))) return json({ error: "That user isn't managed by ePOD" }, 404)
   if (!active) {
     if (id === callerId) return json({ error: "You can't deactivate yourself" }, 400)
     const admins = await activeAdminIds(admin)
@@ -280,11 +296,14 @@ async function deleteUser(admin: SupabaseClient, body: Record<string, unknown>, 
   const id = String(body.id ?? '')
   if (!id) return json({ error: 'User id is required' }, 400)
   if (id === callerId) return json({ error: "You can't delete yourself" }, 400)
+  // ePOD-only (shared auth): never delete the co-tenant app's logins — and
+  // deleting one would fail anyway, since that app's tables reference it.
+  if (!(await isEpodUser(admin, id))) return json({ error: "That user isn't managed by ePOD" }, 404)
   const admins = await activeAdminIds(admin)
   if (admins.has(id) && admins.size <= 1)
     return json({ error: "Can't delete the last active admin" }, 400)
-  // FK on profiles is ON DELETE CASCADE, so the profile goes with the login.
-  // pod_records/parcel_events reference the roster (drivers), not the login.
+  // ePOD's own profiles FK is ON DELETE CASCADE, so the profile goes with the
+  // login; pod_records/parcel_events reference the roster (drivers), not it.
   const { error } = await admin.auth.admin.deleteUser(id)
   if (error) return json({ error: error.message }, 400)
   return json({ data: { id } })
