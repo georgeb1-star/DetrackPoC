@@ -31,7 +31,6 @@ const shots = [
   ['#/sites', 'admin-sites'],
   ['#/dispatch', 'admin-pods'],
   ['#/collections', 'admin-collections'],
-  ['#/reconcile', 'admin-reconcile'],
 ]
 for (const [hash, name] of shots) {
   await page.goto(`${BASE}/${hash}`, { waitUntil: 'networkidle2' })
