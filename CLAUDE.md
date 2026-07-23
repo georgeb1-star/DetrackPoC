@@ -66,13 +66,29 @@ Routing:  main.tsx hash router gated by useSession (LoginScreen when signed
   Collection/warehouse = QUICK scans (no photo) from the scan sheet, queued in
   Dexie `events` (v4) and drained by the same sync worker; delivery = the full
   POD capture, whose sync also upserts a `delivered` event (id = podId).
-  **Scanning auto-advances (2026-07-14, supersedes the earlier
-  no-auto-advance / warn-but-allow model):** a scan moves the parcel to its
-  NEXT lifecycle step, so re-scanning an already-collected parcel walks it
-  forward (collected→at_warehouse→delivery) without re-picking a stage. The
-  stage switch is a floor: picking Deliver routes a collected parcel straight
-  to capture, so coupon runs (collect→deliver) skip warehouse; a 15 s
-  per-label lockout stops a held camera burst-advancing. Server-side the
+  **Scanning auto-advances (2026-07-14):** a scan moves the parcel to its NEXT
+  lifecycle step; a 15 s per-label lockout stops a held camera burst-advancing.
+  **One universal Scan button (2026-07-22, supersedes the tab model):** the
+  StopsScreen has NO lifecycle tabs — a single "Scan a label" button is the
+  whole flow, and `ScanSheet.tryMatch` routes each scan from the parcel's OWN
+  status: `awaiting_collection` → a quick GPS-stamped collect, `collected` →
+  a quick warehouse check-in (both keep the sheet open for a burst),
+  `at_warehouse` → open the delivery capture, `delivered`/`returned` → the
+  read-only receipt (never a second POD). The run is three read-only sections,
+  one per step (2026-07-23) — **To collect** (grouped by pickup point, with the
+  one tap shortcut kept, batch "Collect all · N" → CollectSheet), **To
+  warehouse** (collected parcels waiting to be checked in — a collected parcel
+  is NOT yet ready to deliver, so it lives here, not under To deliver), and **To
+  deliver** (the `at_warehouse` parcels in nearest-neighbour drive order). A
+  parcel appears in exactly one section (awaiting / collected / at_warehouse).
+  Guardrails so a stray re-scan can't open a capture by mistake: the 15 s lock,
+  plus a **geofence guard** — a deliver scan >1 km from the parcel's
+  `destination` (when a GPS fix is available) asks to confirm first
+  (`farDeliver` state). An unknown (not-on-run) label can always be picked up
+  (a pick-up is always a collection). The shell is mobile-first (`AppShell`
+  collapses the sidebar to a slim safe-area-aware top bar; sections stack to one
+  column; a `lg:hidden` floating Scan button stays thumb-reachable on a phone).
+  Server-side the
   guarantee is unchanged — status only ever advances forward via the atomic
   `advance_parcel_status` RPC (security invoker, rank guard in SQL), so
   late/concurrent syncs can't regress a parcel. Event INSERT RLS requires

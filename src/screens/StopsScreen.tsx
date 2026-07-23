@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { BarcodeScanner } from '../components/BarcodeScanner'
 import { TopBar } from '../components/TopBar'
 import { NO_FIX_NOTES, useGeolocation } from '../hooks/useGeolocation'
 import { useSyncStatus } from '../hooks/useSyncStatus'
 import { queueAdhocScan } from '../lib/adhoc'
 import { queueEvent } from '../lib/events'
-import { estimateRunMinutes, fmtDistance, fmtDuration, orderByProximity, parseEwkbPoint, runMetrics } from '../lib/geo'
+import { fmtDistance, haversineM, orderByProximity, parseEwkbPoint, runMetrics } from '../lib/geo'
 import { syncNow } from '../lib/syncWorker'
 import {
   isRollover,
@@ -32,15 +32,6 @@ const STATUS_STYLES: Record<string, string> = {
   delivered: 'text-ok',
   failed: 'text-fail',
   returned: 'text-fail',
-}
-
-/** Lifecycle pill styling per status — the stage chip on every active stop. */
-const STAGE_PILL: Record<ParcelStatus, string> = {
-  awaiting_collection: 'border-line bg-white text-muted',
-  collected: 'border-gold/50 bg-gold/10 text-gold',
-  at_warehouse: 'border-navy-500/40 bg-navy-500/5 text-navy-500',
-  delivered: 'border-ok/40 bg-ok/10 text-ok',
-  returned: 'border-fail/40 bg-fail/10 text-fail',
 }
 
 /** Driver home (§6.1): scan entry, the active run (rollovers first), then a
@@ -114,25 +105,7 @@ export function StopsScreen({
   const completed = parcels?.filter((p) => isDone(p) && completedToday(p)) ?? []
   const rollovers = active.filter((p) => isRollover(p)).length
 
-  // Step 1: Phase state — default to Deliver if everything active is already collected.
-  // The initial value uses allCollected but parcels may still be loading at mount
-  // (active = []), so the default is 'collect' until the effect below corrects it.
-  const allCollected = active.length > 0 && active.every((p) => STATUS_RANK[effectiveStatus(p)] >= STATUS_RANK['collected'])
-  const [phase, setPhase] = useState<'collect' | 'deliver'>(allCollected ? 'deliver' : 'collect')
-
-  // One-shot effect: once parcel data arrives, snap the phase to the right side
-  // (e.g. a driver resuming a part-collected run). After it fires once it never
-  // overrides the driver's manual phase switches.
-  // A ref (not state) is used so setting it to true doesn't trigger a re-render
-  // — using state here would re-run this effect and fight any manual phase switch.
-  const phaseInitialised = useRef(false)
-  useEffect(() => {
-    if (phaseInitialised.current || active.length === 0) return
-    phaseInitialised.current = true
-    setPhase(allCollected ? 'deliver' : 'collect')
-  }, [active, allCollected])
-
-  // Step 2: Group active parcels by collection point (sender_postcode as key).
+  // Group active parcels by collection point (sender_postcode as key).
   // active is recomputed inline each render (new array ref), so useMemo would
   // re-run every render anyway — a plain const is honest and simpler.
   const collectGroups = (() => {
@@ -148,13 +121,20 @@ export function StopsScreen({
     return [...m.values()].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
   })()
 
-  // Deliver phase in a sensible DRIVE order: nearest-neighbour over the stops'
-  // geocoded destinations, not the arbitrary tracking-number order the list
-  // arrives in. Stops with no geocode fall to the end. Plain const (active is a
-  // fresh array each render, so memoising wouldn't help — see collectGroups).
-  const deliverOrder = orderByProximity(active, (p) => parseEwkbPoint(p.destination))
-  // Run metrics over the ordered stops: total drive distance + per-stop legs +
-  // a rough time estimate (labelled "~" — see estimateRunMinutes).
+  // The run splits by lifecycle step, one section each:
+  //   To collect   = awaiting_collection
+  //   To warehouse = collected (next step: check into the warehouse)
+  //   To deliver   = at_warehouse (ready to drop)
+  // A collected parcel is NOT yet ready to deliver — it has to be warehoused
+  // first — so it lives in its own section, not "To deliver".
+  const toWarehouse = active.filter((p) => effectiveStatus(p) === 'collected')
+  // "To deliver" ordered into a sensible DRIVE sequence: nearest-neighbour over
+  // the stops' geocoded destinations, not the arbitrary tracking-number order
+  // the list arrives in. Stops with no geocode fall to the end. Plain const
+  // (active is a fresh array each render, so memoising wouldn't help).
+  const deliverReady = active.filter((p) => effectiveStatus(p) === 'at_warehouse')
+  const deliverOrder = orderByProximity(deliverReady, (p) => parseEwkbPoint(p.destination))
+  // Run metrics over the ordered stops: total drive distance + per-stop legs.
   const deliverPts = deliverOrder.map((p) => parseEwkbPoint(p.destination))
   const { totalM: runMeters, legs: runLegs } = runMetrics(deliverPts)
   const runUnlocated = deliverPts.filter((p) => p == null).length
@@ -178,10 +158,9 @@ export function StopsScreen({
     (p.delivery_area ?? '').toLowerCase().includes(q)
 
   // Run progress for the day: done = terminal/captured, total = everything on
-  // today's run. ETA is a rough estimate over the stops still to deliver.
+  // today's run.
   const total = active.length + completed.length
   const doneCount = completed.length
-  const etaMin = runMeters > 0 && active.length > 0 ? estimateRunMinutes(runMeters, active.length) : 0
 
   /** Mark a set of parcels collected in one go (bulk batch pickup, or a single
    *  row). Writes a real per-parcel 'collection' event — same queue + server
@@ -289,45 +268,29 @@ export function StopsScreen({
         }
       />
 
-      <div className="mx-auto w-full max-w-6xl px-4 py-5 lg:px-8 lg:py-7">
-        {/* The scan-to-attach path is the feature that matters most (§5) — it
-            sits as the primary action beside the section heading. */}
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="section-label">Stops</p>
-          <button
-            type="button"
-            onClick={() => setSheetOpen(true)}
-            className="flex w-full items-center justify-center gap-3 rounded-[13px] bg-navy px-6 py-[14px] font-serif text-base tracking-[0.3px] text-white transition hover:bg-navy-600 active:translate-y-px sm:w-auto"
-          >
-            <BarcodeGlyph />
-            Scan label
-          </button>
-        </div>
-
-        {/* Step 3: Collect/Deliver segmented control with live counts */}
-        {(() => {
-          const collectedCount = active.filter((p) => STATUS_RANK[effectiveStatus(p)] >= STATUS_RANK['collected']).length
-          return (
-            <div className="mb-4 grid grid-cols-2 gap-1 rounded-[12px] border border-line bg-white p-1">
-              {(['collect', 'deliver'] as const).map((ph) => (
-                <button key={ph} type="button" onClick={() => setPhase(ph)}
-                  className={`rounded-[9px] px-3 py-2 text-[13px] font-semibold transition ${phase === ph ? 'bg-navy text-white' : 'text-muted hover:text-ink'}`}>
-                  {ph === 'collect' ? `Collect · ${collectedCount}/${active.length}` : 'Deliver'}
-                </button>
-              ))}
-            </div>
-          )
-        })()}
+      {/* pb-24 on mobile leaves room under the content for the floating Scan
+          button so it never covers the last stop. */}
+      <div className="mx-auto w-full max-w-6xl px-4 pt-5 pb-24 lg:px-8 lg:py-7">
+        {/* One universal action: scanning is the whole lifecycle. A scan moves
+            each parcel to its next step on its own (collect → deliver), so
+            there's no mode to pick first — this is THE button. */}
+        <button
+          type="button"
+          onClick={() => setSheetOpen(true)}
+          className="mb-5 flex w-full items-center justify-center gap-3 rounded-[14px] bg-navy px-6 py-[18px] font-serif text-lg tracking-[0.3px] text-white transition hover:bg-navy-600 active:translate-y-px"
+        >
+          <BarcodeGlyph />
+          Scan a label
+        </button>
 
         {/* Whole-run progress: a glanceable bar the driver can read at arm's
-            length — how much of today is done, and a rough time left. */}
+            length — how much of today is done. */}
         {parcels && total > 0 && (
           <div className="mb-4">
             <div className="mb-1.5 flex items-baseline justify-between text-[12.5px]">
               <span className="font-semibold text-ink">
                 {doneCount} of {total} done
               </span>
-              {etaMin > 0 && <span className="text-muted">~{fmtDuration(etaMin)} left</span>}
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-line">
               <div
@@ -374,125 +337,127 @@ export function StopsScreen({
           </div>
         )}
 
-        {/* Step 4: Collect phase — grouped cards by sender/collection point.
-            Coupon runs are one header-less batch: a "Collect all" clears it in
-            one tap; individual rows can still be collected one at a time. */}
-        {phase === 'collect' && (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {collectGroups.map((g) => {
-              const shown = query ? g.parcels.filter(matchesQuery) : g.parcels
-              if (shown.length === 0) return null // hide groups with no search hit
-              const done = g.parcels.filter(isCollected).length
-              const remaining = g.parcels.filter((p) => !isCollected(p))
-              return (
-                <article key={g.postcode ?? g.name ?? 'origin'} className="flex flex-col rounded-2xl border border-line bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    {(g.name || g.postcode) && (
-                      <div className="min-w-0">
-                        {g.name && <div className="truncate text-[15px] font-semibold text-ink">{g.name}</div>}
-                        {g.postcode && <div className="font-mono text-[11px] tracking-[0.5px] text-navy-500">{g.postcode}</div>}
+        {/* ── To collect ── grouped by pickup point; only groups with parcels
+            still to collect show. Every parcel is THE card (same as the other
+            sections); the one tap shortcut kept is per-pickup batch "Collect
+            all" (coupon-run pickups). */}
+        {(() => {
+          const groups = collectGroups
+            .map((g) => ({ ...g, remaining: g.parcels.filter((p) => !isCollected(p)) }))
+            .filter((g) => g.remaining.length > 0)
+          const totalToCollect = groups.reduce((n, g) => n + g.remaining.length, 0)
+          if (totalToCollect === 0) return null
+          const anyHit = groups.some((g) => g.remaining.some(matchesQuery))
+          return (
+            <>
+              <p className="section-label mb-3">To collect · {totalToCollect}</p>
+              {groups.map((g) => {
+                // Only the still-to-collect parcels — a collected one leaves
+                // this section and appears under "To warehouse".
+                const shown = query ? g.remaining.filter(matchesQuery) : g.remaining
+                if (shown.length === 0) return null // hide groups with no search hit
+                const done = g.parcels.filter(isCollected).length
+                return (
+                  <div key={g.postcode ?? g.name ?? 'origin'} className="mb-6">
+                    {/* pickup-point sub-header — where these come from */}
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="min-w-0 truncate text-[13px]">
+                        <span className="font-semibold text-ink">{g.name || 'Coupon batch'}</span>
+                        {g.postcode && <span className="ml-1.5 font-mono text-[11px] text-navy-500">{g.postcode}</span>}
                       </div>
-                    )}
-                    <span className={`flex-none rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] ${done === g.parcels.length ? 'border-ok/40 bg-ok/10 text-ok' : 'border-gold/50 bg-gold/10 text-gold'}`}>
-                      Collected {done}/{g.parcels.length}
-                    </span>
-                  </div>
-                  <ul className="mt-2 flex flex-col gap-0.5 text-[12.5px] text-muted">
-                    {shown.map((p) => {
-                      const collected = isCollected(p)
-                      return (
-                        <li key={p.id} className="flex items-center gap-2 py-0.5">
-                          <span className={`flex-none text-[13px] ${collected ? 'text-ok' : 'text-line'}`} aria-hidden>
-                            {collected ? '✓' : '○'}
-                          </span>
-                          <span className={`min-w-0 flex-1 truncate ${collected ? 'text-ink' : ''}`}>
-                            {p.recipient_name} · {p.delivery_area || '?'}
-                          </span>
-                          {collected ? (
-                            <span className="flex-none font-mono text-[11px] text-navy-500">{p.tracking_number}</span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setCollectTargets([p])}
-                              className="flex-none rounded-[8px] border border-navy-500/40 px-2.5 py-1 text-[11.5px] font-semibold text-navy-500 transition hover:bg-navy-500/5 active:translate-y-px"
-                            >
-                              Collect
-                            </button>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                  {remaining.length > 0 && (
+                      <span className="flex-none rounded-full border border-gold/50 bg-gold/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] text-gold">
+                        Collected {done}/{g.parcels.length}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {shown.map((p) => (
+                        <StopRow key={p.id} parcel={p} interactive={false} />
+                      ))}
+                    </div>
                     <button
                       type="button"
-                      onClick={() => setCollectTargets(remaining)}
-                      className="mt-3 w-full rounded-[11px] bg-navy px-4 py-3 font-serif text-[15px] text-white transition hover:bg-navy-600 active:translate-y-px"
+                      onClick={() => setCollectTargets(g.remaining)}
+                      className="mt-3 w-full rounded-[11px] bg-navy px-6 py-3 font-serif text-[15px] text-white transition hover:bg-navy-600 active:translate-y-px sm:w-auto"
                     >
-                      Collect all · {remaining.length}
+                      Collect all · {g.remaining.length}
                     </button>
-                  )}
-                </article>
-              )
-            })}
-            {query && collectGroups.every((g) => g.parcels.filter(matchesQuery).length === 0) && (
-              <div className="rounded-2xl border border-line bg-white py-8 text-center text-[13px] text-muted md:col-span-2 xl:col-span-3">
-                No stops match "{query}".
-              </div>
-            )}
-          </div>
-        )}
+                  </div>
+                )
+              })}
+              {query && !anyHit && (
+                <div className="rounded-2xl border border-line bg-white py-8 text-center text-[13px] text-muted">
+                  No stops match "{query}".
+                </div>
+              )}
+            </>
+          )
+        })()}
 
-        {/* Deliver phase: run summary (drive distance + rough time) then the
-            nearest-neighbour-ordered stops. */}
-        {phase === 'deliver' && active.length > 0 && runMeters > 0 && (
-          <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-[12px] border border-line bg-white px-4 py-2.5 text-[13px]">
-            <span className="font-semibold text-ink">≈ {fmtDistance(runMeters)} drive</span>
-            <span className="text-muted">~{fmtDuration(estimateRunMinutes(runMeters, active.length))} est.</span>
-            <span className="text-muted">{active.length} stops</span>
-            {runUnlocated > 0 && <span className="text-gold">{runUnlocated} without a pin</span>}
-          </div>
-        )}
-        {phase === 'deliver' && (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {deliverShown.map((p) => {
-              const i = orderIndex.get(p.id) ?? 0
-              const status = effectiveStatus(p)
-              const stageQueued = queuedStages.has(p.id) && status !== p.status
-              return (
-                <StopRow
-                  key={p.id}
-                  parcel={p}
-                  onSelect={onSelect}
-                  note={deliverNote(p)}
-                  stagePill={
-                    <span
-                      className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] ${STAGE_PILL[status]}`}
-                    >
-                      {STATUS_LABEL[status]}
-                      {stageQueued && ' · queued'}
-                    </span>
-                  }
-                >
-                  {isRollover(p) ? (
-                    <span className="rounded-full border border-gold/50 bg-gold/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] text-gold">
-                      Rollover · {dueLabel(p.due_date)}
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-bold uppercase tracking-[0.6px] text-muted">
-                      Stop {i + 1}
-                      {runLegs[i] != null && <span className="text-navy-500"> · +{fmtDistance(runLegs[i]!)}</span>}
-                    </span>
+        {/* ── To warehouse ── collected parcels whose next step is being
+            checked into the warehouse. Same card as every other section. */}
+        {toWarehouse.length > 0 &&
+          (() => {
+            const shown = query ? toWarehouse.filter(matchesQuery) : toWarehouse
+            return (
+              <>
+                <p className="section-label mb-3 mt-8">To warehouse · {toWarehouse.length}</p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {shown.map((p) => (
+                    <StopRow key={p.id} parcel={p} interactive={false} />
+                  ))}
+                  {query && shown.length === 0 && (
+                    <div className="rounded-2xl border border-line bg-white py-8 text-center text-[13px] text-muted md:col-span-2 xl:col-span-3">
+                      No stops match "{query}".
+                    </div>
                   )}
-                </StopRow>
-              )
-            })}
-            {query && deliverShown.length === 0 && (
-              <div className="rounded-2xl border border-line bg-white py-8 text-center text-[13px] text-muted md:col-span-2 xl:col-span-3">
-                No stops match "{query}".
+                </div>
+              </>
+            )
+          })()}
+
+        {/* ── To deliver ── the warehoused parcels in drive order, same card
+            (with a "Stop N · +dist" tag). Grows as the driver warehouses. */}
+        {deliverOrder.length > 0 && (
+          <>
+            <p className="section-label mb-3 mt-8">To deliver · {deliverOrder.length}</p>
+            {runMeters > 0 && (
+              <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-[12px] border border-line bg-white px-4 py-2.5 text-[13px]">
+                <span className="font-semibold text-ink">≈ {fmtDistance(runMeters)} drive</span>
+                <span className="text-muted">{deliverOrder.length} stops</span>
+                {runUnlocated > 0 && <span className="text-gold">{runUnlocated} without a pin</span>}
               </div>
             )}
-          </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {deliverShown.map((p) => {
+                const i = orderIndex.get(p.id) ?? 0
+                return (
+                  <StopRow
+                    key={p.id}
+                    parcel={p}
+                    onSelect={onSelect}
+                    note={deliverNote(p)}
+                    topRight={
+                      isRollover(p) ? (
+                        <span className="rounded-full border border-gold/50 bg-gold/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] text-gold">
+                          Rollover · {dueLabel(p.due_date)}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-bold uppercase tracking-[0.6px] text-muted">
+                          Stop {i + 1}
+                          {runLegs[i] != null && <span className="text-navy-500"> · +{fmtDistance(runLegs[i]!)}</span>}
+                        </span>
+                      )
+                    }
+                  />
+                )
+              })}
+              {query && deliverShown.length === 0 && (
+                <div className="rounded-2xl border border-line bg-white py-8 text-center text-[13px] text-muted md:col-span-2 xl:col-span-3">
+                  No stops match "{query}".
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         {completed.length > 0 && (
@@ -509,14 +474,15 @@ export function StopsScreen({
                     onSelect={onViewReceipt}
                     dim
                     note={p.status === 'returned' ? `Return to sender — ${p.attempts} failed attempts` : undefined}
-                  >
-                    <span className="text-[11px] font-bold uppercase tracking-[0.6px]">
-                      <span className={STATUS_STYLES[status] ?? 'text-muted'}>
-                        {status === 'delivered' ? '✓ delivered' : status === 'failed' ? 'failed' : STATUS_LABEL[status as ParcelStatus]}
+                    topRight={
+                      <span className="text-[11px] font-bold uppercase tracking-[0.6px]">
+                        <span className={STATUS_STYLES[status] ?? 'text-muted'}>
+                          {status === 'delivered' ? '✓ delivered' : status === 'failed' ? 'failed' : STATUS_LABEL[status as ParcelStatus]}
+                        </span>
+                        {queuedStatus && <span className="text-gold"> · queued</span>}
                       </span>
-                      {queuedStatus && <span className="text-gold"> · queued</span>}
-                    </span>
-                  </StopRow>
+                    }
+                  />
                 )
               })}
             </div>
@@ -584,6 +550,21 @@ export function StopsScreen({
         </div>
       </div>
 
+      {/* Mobile: a thumb-reachable Scan button that stays put while the driver
+          scrolls a long run (the top button scrolls away). Desktop keeps the
+          top button — there's no scroll-reach problem beside the sidebar. */}
+      {parcels && (
+        <button
+          type="button"
+          onClick={() => setSheetOpen(true)}
+          aria-label="Scan a label"
+          className="fixed bottom-[max(16px,env(safe-area-inset-bottom))] right-4 z-30 flex items-center gap-2 rounded-full bg-navy px-5 py-3.5 font-serif text-[15px] text-white shadow-[0_12px_30px_-8px_rgba(14,18,24,.65)] transition active:translate-y-px lg:hidden"
+        >
+          <BarcodeGlyph />
+          Scan
+        </button>
+      )}
+
       {collectTargets && (
         <CollectSheet
           targets={collectTargets}
@@ -608,7 +589,6 @@ export function StopsScreen({
           onStageScan={recordStageScan}
           onAdhocCollect={adhocCollect}
           effectiveStatusOf={effectiveStatus}
-          initialStage={phase === 'collect' ? 'collection' : 'delivered'}
         />
       )}
     </>
@@ -627,40 +607,15 @@ interface SessionScan {
   recorded: boolean
 }
 
-/** The driver picks the starting stage; scanning then AUTO-ADVANCES a parcel to
- *  its next lifecycle step (see nextStage / tryMatch). The picked stage is a
- *  floor — Deliver always opens the full capture, so a collected coupon parcel
- *  can be delivered without being routed through warehouse. */
-const SCAN_STAGES: { key: Stage; label: string }[] = [
-  { key: 'collection', label: 'Collect' },
-  { key: 'warehouse', label: 'Warehouse' },
-  { key: 'delivered', label: 'Deliver' },
-]
-
-/** The stage a scan should record to move a parcel one step forward from its
- *  current status — the ladder the auto-advance walks. null once terminal
- *  (delivered / returned), where a re-scan opens the read-only receipt. */
-function nextStage(status: ParcelStatus): Stage | null {
-  switch (status) {
-    case 'awaiting_collection':
-      return 'collection'
-    case 'collected':
-      return 'warehouse'
-    case 'at_warehouse':
-      return 'delivered'
-    default:
-      return null
-  }
-}
-
-/** Scan sheet (§5): the driver picks a stage — Collect, Warehouse or Deliver —
- *  then scans. Scanning AUTO-ADVANCES the parcel to its next lifecycle step: a
- *  re-scan of an already-collected parcel walks it forward
- *  (collected→at_warehouse→delivery) without re-picking, and Deliver always
- *  opens the full capture (so coupon runs skip warehouse). Collect/Warehouse
- *  are quick scans (stamp time + fresh GPS, sheet stays open for batch
- *  scanning); a 15 s per-label lock stops a held camera burst-advancing.
- *  Type-in is the manual fallback; unknown values surface clearly. */
+/** Scan sheet (§5): ONE universal action, no stage to pick. A scan moves the
+ *  parcel to its next step from its own status — awaiting → collect (a quick,
+ *  GPS-stamped scan; the sheet stays open for a pickup burst), collected or
+ *  at_warehouse → open the delivery capture, delivered/returned → read-only
+ *  receipt (never a second POD). Warehouse is parked (skipped in the flow) for
+ *  the coupon pilot. Guardrails against a stray re-scan opening a capture by
+ *  mistake: a 15 s per-label lock, and a geofence check — a delivery scan >1 km
+ *  from the drop asks to confirm first. Type-in is the manual fallback; an
+ *  unknown label can always be picked up (a pick-up is always a collection). */
 function ScanSheet({
   parcels,
   onClose,
@@ -668,7 +623,6 @@ function ScanSheet({
   onStageScan,
   onAdhocCollect,
   effectiveStatusOf,
-  initialStage,
 }: {
   parcels: Parcel[]
   onClose: () => void
@@ -677,18 +631,17 @@ function ScanSheet({
   /** Collect an unknown (not-on-run) label as a new ad-hoc parcel. */
   onAdhocCollect: (tracking: string, fix: Fix | null) => Promise<void>
   /** The parcel's lifecycle position on this device (server + queued scans) —
-   *  used to catch a scan that wouldn't move it forward (a duplicate). */
+   *  drives the per-parcel auto-advance. */
   effectiveStatusOf: (parcel: Parcel) => ParcelStatus
-  /** Pre-select the stage based on the active phase; the driver can still override. */
-  initialStage?: Stage
 }) {
-  // Initialised from the current phase so the driver doesn't have to re-pick;
-  // the stage switcher stays in place so they can still override.
-  const [mode, setMode] = useState<Stage | null>(initialStage ?? null)
   const [value, setValue] = useState('')
   const [unknown, setUnknown] = useState<string | null>(null)
   const [scans, setScans] = useState<SessionScan[]>([])
   const [adhocBusy, setAdhocBusy] = useState(false)
+  // A deliver scan fired well away from the drop — hold for a confirm rather
+  // than opening the capture, so a stray re-scan at the depot can't start a
+  // delivery by accident. null = no pending confirm.
+  const [farDeliver, setFarDeliver] = useState<{ parcel: Parcel; value: string; distanceM: number } | null>(null)
   // GPS for quick scans: warm-up on sheet open, fresh fix at each scan —
   // same real-or-nothing model as the capture screen.
   const { fix, noFixReason, acquiring, getFix, retry } = useGeolocation()
@@ -701,7 +654,6 @@ function ScanSheet({
   const advancedAtRef = useRef<Map<string, number>>(new Map())
 
   async function tryMatch(raw: string, source: 'scan' | 'type') {
-    if (mode === null) return // a stage must be chosen first — scanning is inert until then
     const needle = raw.trim().toUpperCase()
     if (!needle) return
     const parcel = parcels.find((p) => p.tracking_number.toUpperCase() === needle)
@@ -721,32 +673,37 @@ function ScanSheet({
     if (lastScanRef.current.v === needle && now - lastScanRef.current.t < 4000) return
     lastScanRef.current = { v: needle, t: now }
 
-    // Auto-advance model: a scan moves the parcel to its NEXT lifecycle step.
-    // Deliver is always the full capture. For a quick scan, if the picked stage
-    // is already behind the parcel's status (a re-scan of an already-collected
-    // parcel), walk it one step forward instead — collected → at_warehouse →
-    // delivery — so a second scan progresses the parcel without re-picking a stage.
+    // One universal action: the scan moves the parcel to its next step, chosen
+    // from ITS OWN status — awaiting → collect, collected → warehouse (both
+    // quick GPS-stamped scans), at_warehouse → deliver (capture),
+    // delivered/returned → receipt. No stage for the driver to pick.
     const current = effectiveStatusOf(parcel)
-    let stage: Stage = mode
-    if (stage !== 'delivered' && STATUS_RANK[STAGE_STATUS[stage]] <= STATUS_RANK[current]) {
-      const next = nextStage(current)
-      if (!next) {
-        // Already delivered / returned — open its read-only receipt, never re-capture.
-        onMatch(parcel, needle)
-        return
-      }
-      stage = next
+
+    if (isTerminal(current)) {
+      // Delivered / returned — open the read-only receipt, never re-capture.
+      onMatch(parcel, needle)
+      return
     }
 
-    if (stage === 'delivered') {
+    if (current === 'at_warehouse') {
+      // Ready to deliver. Guard against a stray re-scan far from the drop
+      // (e.g. a double-scan back at the depot) opening a capture by mistake:
+      // if we have a fix and it's well away from the destination, confirm first.
+      const dest = parseEwkbPoint(parcel.destination)
+      const distanceM = fix && dest ? haversineM(fix, dest) : null
+      if (distanceM != null && distanceM > 1000) {
+        setFarDeliver({ parcel, value: needle, distanceM })
+        return
+      }
       navigator.vibrate?.(80) // hands over to the full delivery capture
       onMatch(parcel, needle)
       return
     }
 
-    // Quick stage scan (collection / warehouse). Lock the label briefly after an
-    // advance so a held camera or an accidental repeat can't walk it through
-    // several stages in a burst — only a deliberate later scan moves it on.
+    // A quick, GPS-stamped scan to the next handling step: collect an awaiting
+    // parcel, or check a collected one into the warehouse. Lock the label
+    // briefly afterwards so a held camera / accidental repeat can't fire again.
+    const quickStage: Stage = current === 'collected' ? 'warehouse' : 'collection'
     if (now - (advancedAtRef.current.get(needle) ?? 0) < 15000) return
     advancedAtRef.current.set(needle, now)
 
@@ -755,9 +712,9 @@ function ScanSheet({
     setValue('')
     const at = new Date()
     const scanFix = await getFix() // fresh read so the event is located where scanned
-    const warning = await onStageScan(parcel, needle, stage, scanFix)
+    const warning = await onStageScan(parcel, needle, quickStage, scanFix)
     setScans((prev) =>
-      [{ ref: parcel.tracking_number, name: parcel.recipient_name, stage, at, fix: scanFix, warning, recorded: true }, ...prev].slice(0, 8),
+      [{ ref: parcel.tracking_number, name: parcel.recipient_name, stage: quickStage, at, fix: scanFix, warning, recorded: true }, ...prev].slice(0, 8),
     )
   }
 
@@ -788,127 +745,119 @@ function ScanSheet({
         className="flex-1 overflow-y-auto rounded-t-[22px] bg-paper p-[18px] pb-[max(24px,env(safe-area-inset-bottom))] sm:max-h-[88vh] sm:w-full sm:max-w-md sm:flex-none sm:rounded-[22px] sm:p-6 sm:shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Pick the stage first — there is no default, so a scan can only ever
-            move a parcel to the stage the driver explicitly chose here. */}
-        <div className="mb-3 grid grid-cols-3 gap-1 rounded-[12px] border border-line bg-white p-1">
-          {SCAN_STAGES.map((m) => (
-            <button
-              key={m.key}
-              type="button"
-              onClick={() => setMode(m.key)}
-              className={`rounded-[9px] px-1 py-2.5 text-[13px] font-semibold transition ${
-                mode === m.key ? 'bg-navy text-white' : 'text-muted hover:text-ink'
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
+        {/* One honest line about what a scan does — no stage to pick. Each scan
+            moves the parcel to its next step on its own. */}
+        <div className="mb-3 rounded-[12px] border border-line bg-white px-3.5 py-2.5 text-[12.5px] leading-snug text-muted">
+          <span className="font-semibold text-ink">Just scan. </span>Each scan moves the parcel to its next step —
+          collect → warehouse (quick, GPS-stamped, sheet stays open) → deliver, which opens the capture.
         </div>
-        {mode === null ? (
-          // No stage chosen → the camera and type-in stay gated. Forcing the
-          // choice up front is the whole mistake-prevention mechanism.
-          <div className="rounded-[12px] border border-dashed border-navy-500/40 bg-navy-500/5 px-4 py-5 text-center text-[13px] font-medium leading-snug text-navy-500">
-            Choose <span className="font-bold">Collect</span>, <span className="font-bold">Warehouse</span> or{' '}
-            <span className="font-bold">Deliver</span> above to start scanning.
+
+        <BarcodeScanner onDecode={(v) => void tryMatch(v, 'scan')} />
+
+        {/* GPS state — real-or-nothing, never silent: quick scans record
+            this fix directly; Deliver hands over to the capture screen,
+            which takes its own fresh read at the shutter. */}
+        <div className="mt-2 rounded-[11px] border border-line bg-white px-3 py-1.5">
+          <div className="flex min-h-[30px] items-center justify-between gap-3">
+            {acquiring ? (
+              <span className="flex items-center gap-2 text-[12px] font-medium text-muted">
+                <span className="h-3.5 w-3.5 flex-none animate-spin rounded-full border-2 border-navy/20 border-t-navy" />
+                Acquiring GPS…
+              </span>
+            ) : fix ? (
+              <span className="font-mono text-[12px] font-semibold tracking-[0.02em] text-ok">
+                {fix.lat.toFixed(5)}, {fix.lng.toFixed(5)}
+                {fix.accuracyM != null ? ` ±${fix.accuracyM}m` : ''}
+              </span>
+            ) : (
+              <>
+                <span className="text-[12px] font-semibold text-fail">
+                  No GPS fix — collection scans will record no location.
+                </span>
+                <button type="button" onClick={retry} className="flex-none text-[12px] font-bold text-navy-500 underline">
+                  Retry
+                </button>
+              </>
+            )}
           </div>
-        ) : (
-          <>
-            <p className="mb-2 text-[11.5px] leading-snug text-muted">
-              {mode === 'delivered'
-                ? 'Scanning opens the full delivery capture (photo, signature, outcome).'
-                : 'Scan to advance each parcel a step — collected → warehouse → delivery, stamped with time + GPS. Scan the same label again to move it on; the sheet stays open.'}
+          {/* WHY there's no fix — a blocked permission must never be silent */}
+          {!acquiring && !fix && noFixReason && (
+            <p className="mt-1 border-t border-line pt-1.5 text-[11.5px] leading-snug text-muted">
+              {NO_FIX_NOTES[noFixReason]}
             </p>
+          )}
+        </div>
 
-            <BarcodeScanner onDecode={(v) => void tryMatch(v, 'scan')} />
-
-            {/* GPS state — real-or-nothing, never silent: quick scans record
-                this fix directly; Deliver hands over to the capture screen,
-                which takes its own fresh read at the shutter. */}
-            <div className="mt-2 rounded-[11px] border border-line bg-white px-3 py-1.5">
-              <div className="flex min-h-[30px] items-center justify-between gap-3">
-                {acquiring ? (
-                  <span className="flex items-center gap-2 text-[12px] font-medium text-muted">
-                    <span className="h-3.5 w-3.5 flex-none animate-spin rounded-full border-2 border-navy/20 border-t-navy" />
-                    Acquiring GPS…
-                  </span>
-                ) : fix ? (
-                  <span className="font-mono text-[12px] font-semibold tracking-[0.02em] text-ok">
-                    {fix.lat.toFixed(5)}, {fix.lng.toFixed(5)}
-                    {fix.accuracyM != null ? ` ±${fix.accuracyM}m` : ''}
-                  </span>
-                ) : (
-                  <>
-                    <span className="text-[12px] font-semibold text-fail">
-                      {mode === 'delivered'
-                        ? 'No GPS fix — the delivery will record no location.'
-                        : 'No GPS fix — scans will record no location.'}
-                    </span>
-                    <button type="button" onClick={retry} className="flex-none text-[12px] font-bold text-navy-500 underline">
-                      Retry
-                    </button>
-                  </>
-                )}
-              </div>
-              {/* WHY there's no fix — a blocked permission must never be silent */}
-              {!acquiring && !fix && noFixReason && (
-                <p className="mt-1 border-t border-line pt-1.5 text-[11.5px] leading-snug text-muted">
-                  {NO_FIX_NOTES[noFixReason]}
-                </p>
-              )}
+        {/* Geofence guard: a deliver scan fired well away from the drop asks
+            first, so a stray re-scan (e.g. back at the depot) can't open a
+            capture by mistake. */}
+        {farDeliver && (
+          <div className="mt-2.5 rounded-[11px] border border-gold/50 bg-gold/10 px-3 py-3 text-[13px]">
+            <div className="text-ink">
+              You're <span className="font-semibold">{fmtDistance(farDeliver.distanceM)}</span> from{' '}
+              <span className="font-semibold">{farDeliver.parcel.recipient_name}</span>.
             </div>
-          </>
+            <div className="mt-0.5 text-[12.5px] leading-snug text-muted">
+              That's a long way from the drop — deliver here anyway?
+            </div>
+            <div className="mt-2.5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFarDeliver(null)}
+                className="flex-1 rounded-[10px] border border-line bg-white p-2.5 text-[13px] font-semibold text-muted"
+              >
+                Not yet
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const f = farDeliver
+                  setFarDeliver(null)
+                  navigator.vibrate?.(80)
+                  onMatch(f.parcel, f.value)
+                }}
+                className="flex-1 rounded-[10px] bg-navy p-2.5 font-serif text-[14px] text-white transition hover:bg-navy-600 active:translate-y-px"
+              >
+                Deliver here
+              </button>
+            </div>
+          </div>
         )}
 
-        {unknown &&
-          (mode === 'collection' ? (
-            // In Collect mode a label that isn't on the run is usually an
-            // in-system parcel that just wasn't allocated (or, rarely, a
-            // brand-new item). Offer to pick it up — that claims it onto this
-            // run as collected; the driver captures the full POD at drop-off.
-            <div className="mt-2.5 rounded-[11px] border border-gold/50 bg-gold/10 px-3 py-3 text-[13px]">
-              <div className="text-ink">
-                <span className="font-mono font-semibold">{unknown}</span> isn't on your run.
-              </div>
-              <div className="mt-0.5 text-[12.5px] leading-snug text-muted">
-                Pick it up and add it to your run? It joins as collected, stamped with the time + your GPS — you'll
-                capture the delivery (photo + signature) at drop-off.
-              </div>
-              <div className="mt-2.5 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setUnknown(null)}
-                  disabled={adhocBusy}
-                  className="flex-1 rounded-[10px] border border-line bg-white p-2.5 text-[13px] font-semibold text-muted disabled:opacity-40"
-                >
-                  Dismiss
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void collectAdhoc(unknown)}
-                  disabled={adhocBusy}
-                  className="flex-1 rounded-[10px] bg-navy p-2.5 font-serif text-[14px] text-white transition hover:bg-navy-600 active:translate-y-px disabled:opacity-50"
-                >
-                  {adhocBusy ? 'Picking up…' : 'Pick up'}
-                </button>
-              </div>
+        {unknown && (
+          // A label that isn't on the run is usually an in-system parcel that
+          // just wasn't allocated (or, rarely, a brand-new item). Picking it up
+          // is always a collection — so the offer shows whatever tab you're on;
+          // it claims the label onto this run as collected and the driver
+          // captures the full POD at drop-off.
+          <div className="mt-2.5 rounded-[11px] border border-gold/50 bg-gold/10 px-3 py-3 text-[13px]">
+            <div className="text-ink">
+              <span className="font-mono font-semibold">{unknown}</span> isn't on your run.
             </div>
-          ) : (
-            <div className="mt-2.5 rounded-[11px] border border-fail/40 bg-fail/10 px-3 py-2.5 text-[13px] text-fail">
-              <span className="font-bold">Unknown parcel.</span> No stop matches{' '}
-              <span className="font-mono">{unknown}</span> — check the label or pick from the list.
-              {/* This label isn't on the run — if the driver is collecting it,
-                  one tap flips the stage to Collect and the pick-up offer shows. */}
-              <div className="mt-2">
-                <button
-                  type="button"
-                  onClick={() => setMode('collection')}
-                  className="rounded-[9px] border border-navy-500/40 bg-white px-2.5 py-1.5 text-[12.5px] font-semibold text-navy-500"
-                >
-                  Picking it up? Switch to Collect →
-                </button>
-              </div>
+            <div className="mt-0.5 text-[12.5px] leading-snug text-muted">
+              Pick it up and add it to your run? It joins as collected, stamped with the time + your GPS — you'll
+              capture the delivery (photo + signature) at drop-off.
             </div>
-          ))}
+            <div className="mt-2.5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setUnknown(null)}
+                disabled={adhocBusy}
+                className="flex-1 rounded-[10px] border border-line bg-white p-2.5 text-[13px] font-semibold text-muted disabled:opacity-40"
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                onClick={() => void collectAdhoc(unknown)}
+                disabled={adhocBusy}
+                className="flex-1 rounded-[10px] bg-navy p-2.5 font-serif text-[14px] text-white transition hover:bg-navy-600 active:translate-y-px disabled:opacity-50"
+              >
+                {adhocBusy ? 'Picking up…' : 'Pick up'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Session log: every quick scan this sheet recorded, newest first */}
         {scans.length > 0 && (
@@ -941,87 +890,85 @@ function ScanSheet({
           </div>
         )}
 
-        {mode !== null && (
-          <>
-            <p className="section-label mb-2 mt-4">Or type the tracking number</p>
-            <input
-              value={value}
-              onChange={(e) => {
-                setValue(e.target.value)
-                setUnknown(null)
-              }}
-              onKeyDown={(e) => e.key === 'Enter' && void tryMatch(value, 'type')}
-              placeholder="Tracking number"
-              className="w-full rounded-[11px] border border-line bg-white px-3 py-[11px] font-mono text-sm uppercase tracking-[1px] text-ink focus:border-navy-500 focus:outline-none focus:ring-[3px] focus:ring-navy-500/10"
-            />
-          </>
-        )}
+        <p className="section-label mb-2 mt-4">Or type the tracking number</p>
+        <input
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value)
+            setUnknown(null)
+          }}
+          onKeyDown={(e) => e.key === 'Enter' && void tryMatch(value, 'type')}
+          placeholder="Tracking number"
+          className="w-full rounded-[11px] border border-line bg-white px-3 py-[11px] font-mono text-sm uppercase tracking-[1px] text-ink focus:border-navy-500 focus:outline-none focus:ring-[3px] focus:ring-navy-500/10"
+        />
         <div className="mt-3 flex gap-2">
           <button
             type="button"
             onClick={onClose}
             className="flex-1 rounded-[11px] border border-line bg-white p-[11px] text-[13.5px] font-semibold text-muted"
           >
-            {mode === 'delivered' ? 'Cancel' : 'Done'}
+            Done
           </button>
-          {mode !== null && (
-            <button
-              type="button"
-              onClick={() => void tryMatch(value, 'type')}
-              className="flex-1 rounded-[11px] bg-navy p-[11px] font-serif text-[15px] text-white"
-            >
-              {mode === 'delivered' ? 'Find parcel' : 'Record scan'}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => void tryMatch(value, 'type')}
+            className="flex-1 rounded-[11px] bg-navy p-[11px] font-serif text-[15px] text-white"
+          >
+            Enter
+          </button>
         </div>
       </div>
     </div>
   )
 }
 
-/** One stop as a card; the status slot comes in as children, an optional note
- *  line (attempt history etc.) renders under the address, and the lifecycle
- *  stage pill sits on the bottom row. */
+/** THE parcel card — one identical shape used in every lifecycle section
+ *  (To collect / To warehouse / To deliver / Completed) so the run reads as one
+ *  consistent grid. `topRight` is an optional slot (drive-order "Stop N",
+ *  rollover, or a completed status); an optional `note` line renders under the
+ *  address. Non-interactive (`interactive={false}`) for the scan-driven collect
+ *  / warehouse sections, a tappable button for deliver / completed. */
 function StopRow({
   parcel: p,
   onSelect,
+  interactive = true,
   dim = false,
   note,
-  stagePill,
-  children,
+  topRight,
 }: {
   parcel: Parcel
-  onSelect: (parcel: Parcel) => void
+  onSelect?: (parcel: Parcel) => void
+  interactive?: boolean
   dim?: boolean
   note?: string
-  stagePill?: React.ReactNode
-  children: React.ReactNode
+  topRight?: React.ReactNode
 }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(p)}
-      className={`flex h-full w-full flex-col rounded-2xl border border-line bg-white p-4 text-left transition hover:border-navy-500/40 hover:shadow-[0_6px_20px_-10px_rgba(16,25,46,.35)] active:translate-y-px ${dim ? 'opacity-70' : ''}`}
-    >
+  const cls = `flex h-full w-full flex-col rounded-2xl border border-line bg-white p-4 text-left ${
+    dim ? 'opacity-70' : ''
+  } ${interactive ? 'transition hover:border-navy-500/40 hover:shadow-[0_6px_20px_-10px_rgba(16,25,46,.35)] active:translate-y-px' : ''}`
+  const inner = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 break-words text-[15px] font-semibold">{p.recipient_name}</div>
-        <span className="flex-none">{children}</span>
+        {topRight && <span className="flex-none">{topRight}</span>}
       </div>
       <div className="mt-1 text-[13px] leading-[1.45] text-muted">
         {p.address_line}
         {p.postcode ? `, ${p.postcode}` : ''}
       </div>
       {note && <div className="mt-1 text-[11.5px] font-semibold text-fail">{note}</div>}
-      {/* flex-wrap so a long status pill + area drop below the tracking number
-          on a narrow card instead of overflowing off the right edge. */}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 pt-3">
         <span className="font-mono text-[11px] tracking-[1px] text-navy-500">{p.tracking_number}</span>
-        <span className="flex items-center gap-1.5">
-          {stagePill}
-          <span className="text-[10px] font-bold uppercase tracking-[0.6px] text-gold">{p.delivery_area}</span>
-        </span>
+        <span className="text-[10px] font-bold uppercase tracking-[0.6px] text-gold">{p.delivery_area}</span>
       </div>
+    </>
+  )
+  return interactive ? (
+    <button type="button" onClick={() => onSelect?.(p)} className={cls}>
+      {inner}
     </button>
+  ) : (
+    <div className={cls}>{inner}</div>
   )
 }
 
